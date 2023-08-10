@@ -1,5 +1,3 @@
-#define VERSION "1.0.4.0"
-
 /* includes //{ */
 
 #include <ros/ros.h>
@@ -89,7 +87,6 @@ public:
 private:
   ros::NodeHandle   nh_;
   std::atomic<bool> is_initialized_ = false;
-  std::string       _version_;
 
   std::string _uav_name_;
   bool        _simulation_;
@@ -213,14 +210,6 @@ void AutomaticStart::onInit() {
 
   mrs_lib::ParamLoader param_loader(nh_, "AutomaticStart");
 
-  param_loader.loadParam("version", _version_);
-
-  if (_version_ != VERSION) {
-
-    ROS_ERROR("[AutomaticStart]: the version of the binary (%s) does not match the config file (%s), please build me!", VERSION, _version_.c_str());
-    ros::shutdown();
-  }
-
   param_loader.loadParam("uav_name", _uav_name_);
   param_loader.loadParam("simulation", _simulation_);
 
@@ -319,7 +308,7 @@ void AutomaticStart::onInit() {
 
   is_initialized_ = true;
 
-  ROS_INFO_THROTTLE(1.0, "[AutomaticStart]: initialized, version %s", VERSION);
+  ROS_INFO_THROTTLE(1.0, "[AutomaticStart]: initialized");
 }
 
 //}
