@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1.2)
+cmake_minimum_required(VERSION 3.5)
 project(mrs_uav_autostart)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -21,7 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
   )
 
 set(LIBRARIES
-  MrsAutomaticStart
+  MrsUavAutostart_AutomaticStart
   )
 
 catkin_package(
@@ -34,16 +34,16 @@ include_directories(
   ${Boost_INCLUDE_DIRS}
   )
 
-add_library(MrsAutomaticStart
+add_library(MrsUavAutostart_AutomaticStart
   src/automatic_start.cpp
   )
 
-add_dependencies(MrsAutomaticStart
+add_dependencies(MrsUavAutostart_AutomaticStart
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}
   )
 
-target_link_libraries(MrsAutomaticStart
+target_link_libraries(MrsUavAutostart_AutomaticStart
   ${catkin_LIBRARIES}
   )
 
@@ -61,6 +61,6 @@ install(DIRECTORY launch config
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
   )
 
-install(FILES plugins.xml
+install(FILES nodelets.xml
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
   )
