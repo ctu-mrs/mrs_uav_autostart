@@ -122,13 +122,13 @@ private:
 
   // | ------------------- hw api diagnostics ------------------- |
 
-  void              callbackHwApiStatus(mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>& wrp);
+  void              callbackHwApiStatus(const mrs_msgs::HwApiStatus::ConstPtr msg);
   std::atomic<bool> got_hw_api_status_ = false;
   std::mutex        mutex_hw_api_status_;
 
   // | --------------- Gazebo spawner diagnostics --------------- |
 
-  void                         callbackGazeboSpawnerDiagnostics(mrs_lib::SubscribeHandler<mrs_msgs::SpawnerDiagnostics>& wrp);
+  void                         callbackGazeboSpawnerDiagnostics(const mrs_msgs::SpawnerDiagnostics::ConstPtr msg);
   std::atomic<bool>            got_gazebo_spawner_diagnostics = false;
   mrs_msgs::SpawnerDiagnostics gazebo_spawner_diagnostics_;
   std::mutex                   mutex_gazebo_spawner_diagnostics_;
@@ -328,13 +328,11 @@ void AutomaticStart::genericCallback([[maybe_unused]] const topic_tools::ShapeSh
 
 /* callbackHwApiDiag() //{ */
 
-void AutomaticStart::callbackHwApiStatus(mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>& wrp) {
+void AutomaticStart::callbackHwApiStatus(const mrs_msgs::HwApiStatus::ConstPtr msg) {
 
   if (!is_initialized_) {
     return;
   }
-
-  auto msg = wrp.getMsg();
 
   ROS_INFO_ONCE("[AutomaticStart]: getting HW API diagnostics");
 
@@ -389,15 +387,13 @@ void AutomaticStart::callbackHwApiStatus(mrs_lib::SubscribeHandler<mrs_msgs::HwA
 
 /* callbackGazeboSpawnerDiagnostics() //{ */
 
-void AutomaticStart::callbackGazeboSpawnerDiagnostics(mrs_lib::SubscribeHandler<mrs_msgs::SpawnerDiagnostics>& wrp) {
+void AutomaticStart::callbackGazeboSpawnerDiagnostics(const mrs_msgs::SpawnerDiagnostics::ConstPtr msg) {
 
   if (!is_initialized_) {
     return;
   }
 
   ROS_INFO_ONCE("[AutomaticStart]: getting spawner diagnostics");
-
-  auto msg = wrp.getMsg();
 
   {
     std::scoped_lock lock(mutex_gazebo_spawner_diagnostics_);
