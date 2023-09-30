@@ -17,7 +17,7 @@
 #include <mrs_msgs/MpcTrackerDiagnostics.h>
 #include <mrs_msgs/ReferenceStampedSrv.h>
 #include <mrs_msgs/ValidateReference.h>
-#include <mrs_msgs/SpawnerDiagnostics.h>
+#include <mrs_msgs/GazeboSpawnerDiagnostics.h>
 #include <mrs_msgs/HwApiStatus.h>
 
 #include <geometry_msgs/PoseStamped.h>
@@ -108,7 +108,7 @@ private:
   mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>               sh_hw_api_status_;
   mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sh_control_manager_diag_;
   mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>     sh_uav_manager_diag_;
-  mrs_lib::SubscribeHandler<mrs_msgs::SpawnerDiagnostics>        sh_gazebo_spawner_diag_;
+  mrs_lib::SubscribeHandler<mrs_msgs::GazeboSpawnerDiagnostics>  sh_gazebo_spawner_diag_;
 
   // | ----------------------- publishers ----------------------- |
 
@@ -128,10 +128,10 @@ private:
 
   // | --------------- Gazebo spawner diagnostics --------------- |
 
-  void                         callbackGazeboSpawnerDiagnostics(const mrs_msgs::SpawnerDiagnostics::ConstPtr msg);
-  std::atomic<bool>            got_gazebo_spawner_diagnostics = false;
-  mrs_msgs::SpawnerDiagnostics gazebo_spawner_diagnostics_;
-  std::mutex                   mutex_gazebo_spawner_diagnostics_;
+  void                               callbackGazeboSpawnerDiagnostics(const mrs_msgs::GazeboSpawnerDiagnostics::ConstPtr msg);
+  std::atomic<bool>                  got_gazebo_spawner_diagnostics = false;
+  mrs_msgs::GazeboSpawnerDiagnostics gazebo_spawner_diagnostics_;
+  std::mutex                         mutex_gazebo_spawner_diagnostics_;
 
   // | ----------------- arm and offboard check ----------------- |
 
@@ -254,8 +254,8 @@ void AutomaticStart::onInit() {
   sh_hw_api_status_        = mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>(shopts, "hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
   sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diagnostics_in");
   sh_uav_manager_diag_     = mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>(shopts, "uav_manager_diagnostics_in");
-  sh_gazebo_spawner_diag_ =
-      mrs_lib::SubscribeHandler<mrs_msgs::SpawnerDiagnostics>(shopts, "gazebo_spawner_diagnostics_in", &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
+  sh_gazebo_spawner_diag_  = mrs_lib::SubscribeHandler<mrs_msgs::GazeboSpawnerDiagnostics>(shopts, "gazebo_spawner_diagnostics_in",
+                                                                                          &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
 
   // | ----------------------- publishers ----------------------- |
 
@@ -387,7 +387,7 @@ void AutomaticStart::callbackHwApiStatus(const mrs_msgs::HwApiStatus::ConstPtr m
 
 /* callbackGazeboSpawnerDiagnostics() //{ */
 
-void AutomaticStart::callbackGazeboSpawnerDiagnostics(const mrs_msgs::SpawnerDiagnostics::ConstPtr msg) {
+void AutomaticStart::callbackGazeboSpawnerDiagnostics(const mrs_msgs::GazeboSpawnerDiagnostics::ConstPtr msg) {
 
   if (!is_initialized_) {
     return;
