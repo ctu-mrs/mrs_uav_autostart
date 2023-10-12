@@ -210,6 +210,16 @@ void AutomaticStart::onInit() {
 
   mrs_lib::ParamLoader param_loader(nh_, "AutomaticStart");
 
+  std::string custom_config_path;
+
+  param_loader.loadParam("custom_config", custom_config_path);
+
+  if (custom_config_path != "") {
+    param_loader.addYamlFileFromParam("custom_config");
+  }
+
+  param_loader.addYamlFileFromParam("config");
+
   param_loader.loadParam("uav_name", _uav_name_);
   param_loader.loadParam("simulation", _simulation_);
 
