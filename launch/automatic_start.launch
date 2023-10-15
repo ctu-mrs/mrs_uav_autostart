@@ -9,6 +9,10 @@
   <arg if="$(eval arg('RUN_TYPE') == 'simulation')" name="simulation" default="true" />
   <arg if="$(eval arg('RUN_TYPE') == 'realworld')" name="simulation" default="false" />
 
+  <arg name="debug" default="false" />
+  <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch" />
+  <arg unless="$(arg debug)" name="launch_prefix" value="" />
+
     <!-- other args -->
   <arg name="standalone" default="true" />
 
@@ -19,9 +23,10 @@
 
   <group ns="$(arg UAV_NAME)">
 
-    <node name="automatic_start" pkg="nodelet" type="nodelet" args="$(arg nodelet) mrs_uav_autostart/AutomaticStart $(arg nodelet_manager)" output="screen">
+    <node name="automatic_start" pkg="nodelet" type="nodelet" args="$(arg nodelet) mrs_uav_autostart/AutomaticStart $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
 
-      <param name="config" value="$(find mrs_uav_autostart)/config/automatic_start.yaml" />
+      <param name="config_private" value="$(find mrs_uav_autostart)/config/private/automatic_start.yaml" />
+      <param name="config_public" value="$(find mrs_uav_autostart)/config/public/automatic_start.yaml" />
 
       <param if="$(eval arg('custom_config') == '')" name="custom_config" value="" />
       <param if="$(eval not arg('custom_config') == '' and arg('custom_config')[0] == '/')" name="custom_config" value="$(arg custom_config)" />
