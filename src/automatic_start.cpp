@@ -215,7 +215,7 @@ void AutomaticStart::onInit() {
   param_loader.loadParam("custom_config", custom_config_path);
 
   if (custom_config_path != "") {
-    param_loader.addYamlFileFromParam("custom_config");
+    param_loader.addYamlFileFromParam(custom_config_path);
   }
 
   param_loader.addYamlFileFromParam("config");
