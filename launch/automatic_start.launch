@@ -40,21 +40,17 @@
       <remap from="~control_manager_diagnostics_in" to="control_manager/diagnostics" />
       <remap from="~uav_manager_diagnostics_in" to="uav_manager/diagnostics" />
       <remap from="~gazebo_spawner_diagnostics_in" to="/mrs_drone_spawner/diagnostics" />
+      <remap from="~uav_state_in" to="estimation_manager/diagnostics" />
 
         <!-- Publishers -->
       <remap from="~can_takeoff_out" to="~can_takeoff" />
 
         <!-- services -->
       <remap from="~takeoff_out" to="uav_manager/takeoff" />
-      <remap from="~land_home_out" to="uav_manager/land_home" />
-      <remap from="~land_out" to="uav_manager/land" />
       <remap from="~eland_out" to="control_manager/eland" />
       <remap from="~toggle_control_output_out" to="control_manager/toggle_output" />
       <remap from="~arm_out" to="hw_api/arming" />
       <remap from="~validate_reference_out" to="control_manager/validate_reference_2d" />
-
-      <remap from="~start_out" to="~start" />
-      <remap from="~stop_out" to="~stop" />
 
     </node>
 

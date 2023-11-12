@@ -7,24 +7,18 @@ pre_takeoff_sleep: 0.0 # [s]
 # default = 5 sec
 safety_timeout: 5.0 # [s]
 
-# how many times it will try to call the start/stop services if the call fails
-call_n_attempts: 10 # [-]
-
 # true: will cause the UAV to take off
 # false: will switch the drone to offboard, but the service
 #     uav_manager/takeoff
 # needs to be called manually.
 handle_takeoff: true
 
-# automatic landing after pre-set period of time
-handle_landing: false
-action_duration: 12.0 # [min]
-land_mode: "eland" # {land_home, land, eland}
-
+# the node with wait for the following topics and won't allow
+# takeoff until some data apear on them
 topic_check:
 
   enabled: true
-  timeout: 5.0 # [s], a window for the last accepted message
+  timeout: 5.0 # [s], allowed timeout for the last accepted message
 
   # if "/" is provided at the beginning of topic_name, the topic name is considered as written,
   # if there is no "/" at the beginning, UAV_NAME is automatically added in from of the topic name (/uav1/topic_name)
