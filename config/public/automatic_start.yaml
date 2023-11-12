@@ -13,16 +13,24 @@ safety_timeout: 5.0 # [s]
 # needs to be called manually.
 handle_takeoff: true
 
-# the node with wait for the following topics and won't allow
-# takeoff until some data apear on them
-topic_check:
+preflight_check:
 
-  enabled: true
-  timeout: 5.0 # [s], allowed timeout for the last accepted message
+  velocity_check:
 
-  # if "/" is provided at the beginning of topic_name, the topic name is considered as written,
-  # if there is no "/" at the beginning, UAV_NAME is automatically added in from of the topic name (/uav1/topic_name)
-  topics: [
-    "estimation_manager/uav_state",
-    "control_manager/diagnostics",
-  ]
+    enabled: true
+
+    max_speed: 0.3 # [m/s]
+
+  # the node with wait for the following topics and won't allow
+  # takeoff until some data apear on them
+  topic_check:
+
+    enabled: true
+    timeout: 5.0 # [s], allowed timeout for the last accepted message
+
+    # if "/" is provided at the beginning of topic_name, the topic name is considered as written,
+    # if there is no "/" at the beginning, UAV_NAME is automatically added in from of the topic name (/uav1/topic_name)
+    topics: [
+      "estimation_manager/uav_state",
+      "control_manager/diagnostics",
+    ]

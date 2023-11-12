@@ -6,6 +6,7 @@
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/mutex.h>
 #include <mrs_lib/subscribe_handler.h>
+#include <mrs_lib/publisher_handler.h>
 
 #include <std_msgs/Bool.h>
 
@@ -14,15 +15,10 @@
 
 #include <mrs_msgs/ControlManagerDiagnostics.h>
 #include <mrs_msgs/UavManagerDiagnostics.h>
-#include <mrs_msgs/MpcTrackerDiagnostics.h>
-#include <mrs_msgs/ReferenceStampedSrv.h>
 #include <mrs_msgs/ValidateReference.h>
 #include <mrs_msgs/GazeboSpawnerDiagnostics.h>
 #include <mrs_msgs/HwApiStatus.h>
-
-#include <geometry_msgs/PoseStamped.h>
-
-#include <sensor_msgs/CameraInfo.h>
+#include <mrs_msgs/EstimationDiagnostics.h>
 
 #include <topic_tools/shape_shifter.h>
 
@@ -92,11 +88,10 @@ private:
   ros::ServiceClient service_client_takeoff_;
   ros::ServiceClient service_client_eland_;
   ros::ServiceClient service_client_validate_reference_;
-  ros::ServiceClient service_client_start_;
-  ros::ServiceClient service_client_stop_;
 
   // | ----------------------- subscribers ---------------------- |
 
+  mrs_lib::SubscribeHandler<mrs_msgs::EstimationDiagnostics>     sh_estimation_diag_;
   mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>               sh_hw_api_status_;
   mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sh_control_manager_diag_;
   mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>     sh_uav_manager_diag_;
@@ -104,7 +99,7 @@ private:
 
   // | ----------------------- publishers ----------------------- |
 
-  ros::Publisher publisher_can_takeoff_;
+  mrs_lib::PublisherHandler<std_msgs::Bool> ph_can_takeoff_;
 
   // | ----------------------- main timer ----------------------- |
 
@@ -144,6 +139,8 @@ private:
   bool disarm();
 
   bool isGazeboSimulation(void);
+  bool topicCheck(void);
+  bool speedCheck(void);
   bool is_gazebo_simulation_ = false;
 
   // | ---------------------- other params ---------------------- |
@@ -153,11 +150,17 @@ private:
   double      _pre_takeoff_sleep_;
   bool        _handle_takeoff_ = false;
   double      _safety_timeout_;
+  double      _control_output_timeout_;
 
   // | ---------------------- state machine --------------------- |
 
   uint current_state = STATE_IDLE;
   void changeState(LandingStates_t new_state);
+
+  // | --------------------- velocity check --------------------- |
+
+  bool   _velocity_check_enabled_ = false;
+  double _velocity_check_max_speed_;
 
   // | ---------------- generic topic subscribers --------------- |
 
@@ -206,15 +209,19 @@ void AutomaticStart::onInit() {
 
   param_loader.loadParam("main_timer_rate", _main_timer_rate_);
   param_loader.loadParam("body_frame_name", _body_frame_name_);
+  param_loader.loadParam("control_output_timeout", _control_output_timeout_);
 
   param_loader.loadParam("safety_timeout", _safety_timeout_);
   param_loader.loadParam("pre_takeoff_sleep", _pre_takeoff_sleep_);
 
   param_loader.loadParam("handle_takeoff", _handle_takeoff_);
 
-  param_loader.loadParam("topic_check/enabled", _topic_check_enabled_);
-  param_loader.loadParam("topic_check/timeout", _topic_check_timeout_);
-  param_loader.loadParam("topic_check/topics", _topic_check_topic_names_);
+  param_loader.loadParam("preflight_check/velocity_check/enabled", _velocity_check_enabled_);
+  param_loader.loadParam("preflight_check/velocity_check/max_speed", _velocity_check_max_speed_);
+
+  param_loader.loadParam("preflight_check/topic_check/enabled", _topic_check_enabled_);
+  param_loader.loadParam("preflight_check/topic_check/timeout", _topic_check_timeout_);
+  param_loader.loadParam("preflight_check/topic_check/topics", _topic_check_topic_names_);
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[AutomaticStart]: Could not load all parameters!");
@@ -232,6 +239,7 @@ void AutomaticStart::onInit() {
   shopts.queue_size         = 10;
   shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
+  sh_estimation_diag_      = mrs_lib::SubscribeHandler<mrs_msgs::EstimationDiagnostics>(shopts, "estimation_diag_in");
   sh_hw_api_status_        = mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>(shopts, "hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
   sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diagnostics_in");
   sh_uav_manager_diag_     = mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>(shopts, "uav_manager_diagnostics_in");
@@ -240,7 +248,7 @@ void AutomaticStart::onInit() {
 
   // | ----------------------- publishers ----------------------- |
 
-  publisher_can_takeoff_ = nh_.advertise<std_msgs::Bool>("can_takeoff_out", 1);
+  ph_can_takeoff_ = mrs_lib::PublisherHandler<std_msgs::Bool>(nh_, "can_takeoff_out");
 
   // | --------------------- service clients -------------------- |
 
@@ -250,10 +258,6 @@ void AutomaticStart::onInit() {
   service_client_arm_                   = nh_.serviceClient<std_srvs::SetBool>("arm_out");
 
   service_client_validate_reference_ = nh_.serviceClient<mrs_msgs::ValidateReference>("validate_reference_out");
-
-  service_client_start_ = nh_.serviceClient<std_srvs::Trigger>("start_out");
-
-  service_client_stop_ = nh_.serviceClient<std_srvs::Trigger>("stop_out");
 
   // | ------------------ setup generic topics ------------------ |
 
@@ -399,59 +403,44 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
   bool got_uav_manager_diag     = sh_uav_manager_diag_.hasMsg();
   bool got_control_manager_diag = sh_control_manager_diag_.hasMsg();
+  bool got_estimation_diag      = sh_estimation_diag_.hasMsg();
 
-  if (!got_control_manager_diag || !got_hw_api_status_ || !got_uav_manager_diag) {
-    ROS_WARN_THROTTLE(5.0, "[AutomaticStart]: waiting for data: ControManager=%s, UavManager=%s, HW Api=%s", got_control_manager_diag ? "true" : "FALSE",
-                      got_uav_manager_diag ? "true" : "FALSE", got_hw_api_status_ ? "true" : "FALSE");
+  if (!got_control_manager_diag || !got_hw_api_status_ || !got_uav_manager_diag || !got_estimation_diag) {
+    ROS_WARN_THROTTLE(5.0, "[AutomaticStart]: waiting for data: ControManager=%s, UavManager=%s, HW Api=%s, EstimationManager=%s",
+                      got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api_status_ ? "true" : "FALSE",
+                      got_estimation_diag ? "true" : "FALSE");
     return;
   }
 
   auto [armed, offboard, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_hw_api_status_, armed_, offboard_, armed_time_, offboard_time_);
   auto control_manager_diagnostics                  = sh_control_manager_diag_.getMsg();
 
-  bool   control_output   = sh_control_manager_diag_.getMsg()->output_enabled;
-  double time_from_arming = (ros::Time::now() - armed_time).toSec();
-  bool   position_valid   = validateReference();
-
-  bool got_topics = true;
-
-  std::stringstream missing_topics;
-
-  if (_topic_check_enabled_) {
-
-    for (int i = 0; i < int(topic_check_topics_.size()); i++) {
-      if ((ros::Time::now() - topic_check_topics_[i].getTime()).toSec() > _topic_check_timeout_) {
-        missing_topics << std::endl << "\t" << topic_check_topics_[i].getTopicName();
-        got_topics = false;
-      }
-    }
-  }
-
-  std_msgs::Bool can_takeoff_msg;
-  can_takeoff_msg.data = false;
-
-  if (got_topics && position_valid && current_state == STATE_IDLE) {
-    can_takeoff_msg.data = true;
-  }
-
-  try {
-    publisher_can_takeoff_.publish(can_takeoff_msg);
-  }
-  catch (...) {
-    ROS_ERROR("exception caught, could not publish");
-  }
-
-  if (!got_topics) {
-    ROS_WARN_STREAM_THROTTLE(1.0, "[AutomaticStart]: missing data on topics: " << missing_topics.str());
-  }
-
   switch (current_state) {
 
     case STATE_IDLE: {
 
+      bool   control_output   = sh_control_manager_diag_.getMsg()->output_enabled;
+      double time_from_arming = (ros::Time::now() - armed_time).toSec();
+
+      std_msgs::Bool can_takeoff_msg;
+      can_takeoff_msg.data = false;
+
+      // | -------------------- preflight checks -------------------- |
+
+      bool position_valid = validateReference();
+      bool got_topics     = topicCheck();
+      bool speed_valid    = speedCheck();
+
+      bool can_takeoff = got_topics && position_valid && speed_valid;
+
+      // | ---------------------------------------------------------- |
+
+      can_takeoff_msg.data = can_takeoff;
+      ph_can_takeoff_.publish(can_takeoff_msg);
+
       if (armed && !control_output) {
 
-        if (position_valid && got_topics) {
+        if (can_takeoff) {
 
           bool res = toggleControlOutput(true);
 
@@ -460,9 +449,9 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           }
         }
 
-        if (time_from_arming > 1.5) {
+        if (time_from_arming > _control_output_timeout_) {
 
-          ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: could not set control output ON for 1.5 secs, disarming");
+          ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: could not set control output ON for %.2f secs, disarming", _control_output_timeout_);
           disarm();
           changeState(STATE_FINISHED);
         }
@@ -504,7 +493,7 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
           double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff : offboard_time_diff;
 
-          ROS_WARN_THROTTLE(1.0, "starting in %.0f", (_safety_timeout_ - min));
+          ROS_WARN_THROTTLE(1.0, "taking off in %.0f", (_safety_timeout_ - min));
         }
       }
 
@@ -514,12 +503,15 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     case STATE_TAKEOFF: {
 
       // if takeoff finished
-      if (control_manager_diagnostics->active_tracker != "NullTracker" && control_manager_diagnostics->active_tracker != "LandoffTracker" &&
-          !control_manager_diagnostics->tracker_status.have_goal) {
+      if (control_manager_diagnostics->flying_normally) {
 
         ROS_INFO_THROTTLE(1.0, "[AutomaticStart]: takeoff finished");
 
         changeState(STATE_FINISHED);
+
+      } else {
+
+        ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: waiting for the takeoff to finish");
       }
 
       break;
@@ -777,6 +769,60 @@ bool AutomaticStart::isGazeboSimulation(void) {
   }
 
   return false;
+}
+
+//}
+
+/* topicCheck() //{ */
+
+bool AutomaticStart::topicCheck(void) {
+
+  bool got_topics = true;
+
+  std::stringstream missing_topics;
+
+  if (_topic_check_enabled_) {
+
+    for (int i = 0; i < int(topic_check_topics_.size()); i++) {
+      if ((ros::Time::now() - topic_check_topics_[i].getTime()).toSec() > _topic_check_timeout_) {
+        missing_topics << std::endl << "\t" << topic_check_topics_[i].getTopicName();
+        got_topics = false;
+      }
+    }
+  }
+
+  if (!got_topics) {
+    ROS_WARN_STREAM_THROTTLE(1.0, "[AutomaticStart]: missing data on topics: " << missing_topics.str());
+  }
+
+  return got_topics;
+}
+
+//}
+
+/* velocityCheck() //{ */
+
+bool AutomaticStart::speedCheck(void) {
+
+  if (!_velocity_check_enabled_) {
+    return true;
+  }
+
+  if (!sh_estimation_diag_.hasMsg()) {
+    return false;
+  }
+
+  auto estimation_diag = sh_estimation_diag_.getMsg();
+
+  double speed =
+      sqrt(pow(estimation_diag->velocity.linear.x, 2.0) + pow(estimation_diag->velocity.linear.y, 2.0) + pow(estimation_diag->velocity.linear.z, 2.0));
+
+  if (speed > _velocity_check_max_speed_) {
+    ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: the estimated speed (%.2f ms^-2) is over the limit (%.2f ms^-2)", speed, _velocity_check_max_speed_);
+    return false;
+  }
+
+  return true;
 }
 
 //}

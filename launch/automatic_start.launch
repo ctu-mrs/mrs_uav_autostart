@@ -40,7 +40,7 @@
       <remap from="~control_manager_diagnostics_in" to="control_manager/diagnostics" />
       <remap from="~uav_manager_diagnostics_in" to="uav_manager/diagnostics" />
       <remap from="~gazebo_spawner_diagnostics_in" to="/mrs_drone_spawner/diagnostics" />
-      <remap from="~uav_state_in" to="estimation_manager/diagnostics" />
+      <remap from="~estimation_diag_in" to="estimation_manager/diagnostics" />
 
         <!-- Publishers -->
       <remap from="~can_takeoff_out" to="~can_takeoff" />
