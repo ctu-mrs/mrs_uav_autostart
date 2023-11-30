@@ -2,9 +2,6 @@
 
 PACKAGE_NAME=mrs_uav_autostart
 
-# find the build folder of the current workspace
-roscd $PACKAGE_NAME
-
 while [ ! -e ".catkin_tools" ]; do
   cd ..
   if [[ `pwd` == "/" ]]; then
