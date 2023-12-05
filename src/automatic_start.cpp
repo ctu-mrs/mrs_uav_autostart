@@ -132,7 +132,6 @@ private:
 
   bool takeoff();
 
-  bool elandImpl();
   bool validateReference();
 
   bool toggleControlOutput(const bool& value);
@@ -599,37 +598,6 @@ bool AutomaticStart::takeoff() {
   } else {
 
     ROS_ERROR_THROTTLE(1.0, "[AutomaticStart]: service call for taking off failed");
-  }
-
-  return false;
-}
-
-//}
-
-/* elandImpl() //{ */
-
-bool AutomaticStart::elandImpl() {
-
-  ROS_INFO_THROTTLE(1.0, "[AutomaticStart]: elanding");
-
-  std_srvs::Trigger srv;
-
-  bool res = service_client_eland_.call(srv);
-
-  if (res) {
-
-    if (srv.response.success) {
-
-      return true;
-
-    } else {
-
-      ROS_ERROR_THROTTLE(1.0, "[AutomaticStart]: elanding failed: %s", srv.response.message.c_str());
-    }
-
-  } else {
-
-    ROS_ERROR_THROTTLE(1.0, "[AutomaticStart]: service call for elanding failed");
   }
 
   return false;
