@@ -5,8 +5,6 @@ set -e
 trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
 trap 'echo "$0: \"${last_command}\" command failed with exit code $?"' ERR
 
-PACKAGE_NAME=mrs_uav_autostart
-
 ORIGINAL_PATH=`pwd`
 
 while [ ! -e ".catkin_tools" ]; do
