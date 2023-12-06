@@ -5,7 +5,7 @@ find_package(catkin REQUIRED COMPONENTS mrs_uav_testing)
 add_subdirectory(takeoff)
 
 # will test takeoff in gazebo
-# add_subdirectory(gazebo_takeoff)
+add_subdirectory(gazebo_takeoff)
 
 # will test if takeoff is not allowed outside of safety area
 add_subdirectory(outside_safety_area)
