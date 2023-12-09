@@ -4,6 +4,9 @@ project(mrs_uav_autostart)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_definitions(-Wall)
+add_definitions(-Wextra)
+
 if(COVERAGE)
   message(WARNING "building with --coverage, the performance might be limited")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage")
