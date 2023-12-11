@@ -13,9 +13,4 @@ add_dependencies(test_${TEST_NAME}
   ${catkin_EXPORTED_TARGETS}
   )
 
-add_rostest(${TEST_NAME}.test
-  ARGS
-  test_path:=${CMAKE_CURRENT_SOURCE_DIR}
-  package_name:=${PROJECT_NAME}
-  test_name:=${TEST_NAME}
-  )
+add_rostest(${TEST_NAME}.test)
