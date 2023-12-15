@@ -35,7 +35,7 @@ bool Tester::test() {
       break;
     }
 
-    sleep(0.1);
+    sleep(0.01);
   }
 
   // | ---------------------- arm the drone --------------------- |
@@ -120,7 +120,7 @@ bool Tester::test() {
       return true;
     }
 
-    sleep(0.1);
+    sleep(0.01);
   }
 
   return false;
