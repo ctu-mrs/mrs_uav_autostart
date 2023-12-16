@@ -24,7 +24,7 @@ Tester::Tester() : mrs_uav_testing::TestGeneric() {
   timer_main_ = nh_.createTimer(ros::Rate(100.0), &Tester::timerMain, this, false, true);
 }
 
-void Tester::timerMain(const ros::TimerEvent& event) {
+void Tester::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
   mrs_msgs::HwApiVelocityHdgCmd msg;
 
