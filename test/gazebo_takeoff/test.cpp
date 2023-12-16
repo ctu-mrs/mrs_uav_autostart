@@ -23,7 +23,7 @@ bool Tester::test() {
     auto [success, message] = takeoff();
 
     if (!success) {
-      ROS_ERROR("[%s]: midair activation failed with message: '%s'", ros::this_node::getName().c_str(), message.c_str());
+      ROS_ERROR("[%s]: takeoff failed with message: '%s'", ros::this_node::getName().c_str(), message.c_str());
       return false;
     }
   }

@@ -1,5 +1,4 @@
 find_package(rostest REQUIRED)
-find_package(catkin REQUIRED COMPONENTS mrs_uav_testing)
 
 # will test takeoff in mrs simulator
 add_subdirectory(takeoff)
