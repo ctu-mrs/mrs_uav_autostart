@@ -145,7 +145,6 @@ private:
   // | ---------------------- other params ---------------------- |
 
   std::string _body_frame_name_;
-  double      _action_duration_;
   double      _pre_takeoff_sleep_;
   bool        _handle_takeoff_ = false;
   double      _safety_timeout_;
@@ -555,6 +554,9 @@ void AutomaticStart::changeState(LandingStates_t new_state) {
       bool res = takeoff();
 
       if (!res) {
+
+        current_state = STATE_FINISHED;
+
         return;
       }
 

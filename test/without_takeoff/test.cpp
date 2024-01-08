@@ -126,7 +126,6 @@ bool Tester::test() {
   return false;
 }
 
-
 TEST(TESTSuite, test) {
 
   Tester tester;
