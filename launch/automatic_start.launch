@@ -47,7 +47,6 @@
 
         <!-- services -->
       <remap from="~takeoff_out" to="uav_manager/takeoff" />
-      <remap from="~eland_out" to="control_manager/eland" />
       <remap from="~toggle_control_output_out" to="control_manager/toggle_output" />
       <remap from="~arm_out" to="hw_api/arming" />
       <remap from="~validate_reference_out" to="control_manager/validate_reference_2d" />

@@ -86,7 +86,6 @@ private:
   ros::ServiceClient service_client_toggle_control_output_;
   ros::ServiceClient service_client_arm_;
   ros::ServiceClient service_client_takeoff_;
-  ros::ServiceClient service_client_eland_;
   ros::ServiceClient service_client_validate_reference_;
 
   // | ----------------------- subscribers ---------------------- |
@@ -251,7 +250,6 @@ void AutomaticStart::onInit() {
   // | --------------------- service clients -------------------- |
 
   service_client_takeoff_               = nh_.serviceClient<std_srvs::Trigger>("takeoff_out");
-  service_client_eland_                 = nh_.serviceClient<std_srvs::Trigger>("eland_out");
   service_client_toggle_control_output_ = nh_.serviceClient<std_srvs::SetBool>("toggle_control_output_out");
   service_client_arm_                   = nh_.serviceClient<std_srvs::SetBool>("arm_out");
 
