@@ -67,7 +67,7 @@ typedef enum
   STATE_FINISHED
 } LandingStates_t;
 
-const char* state_names[4] = {"IDLING", "TAKEOFF", "FINISHED"};
+const char* state_names[3] = {"IDLING", "TAKEOFF", "FINISHED"};
 
 class AutomaticStart : public nodelet::Nodelet {
 
@@ -404,7 +404,7 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   bool got_estimation_diag      = sh_estimation_diag_.hasMsg();
 
   if (!got_control_manager_diag || !got_hw_api_status_ || !got_uav_manager_diag || !got_estimation_diag) {
-    ROS_WARN_THROTTLE(5.0, "[AutomaticStart]: waiting for data: ControManager=%s, UavManager=%s, HW Api=%s, EstimationManager=%s",
+    ROS_WARN_THROTTLE(5.0, "[AutomaticStart]: waiting for data: ControlManager=%s, UavManager=%s, HW Api=%s, EstimationManager=%s",
                       got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api_status_ ? "true" : "FALSE",
                       got_estimation_diag ? "true" : "FALSE");
     return;

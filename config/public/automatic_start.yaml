@@ -8,9 +8,8 @@ pre_takeoff_sleep: 0.0 # [s]
 safety_timeout: 5.0 # [s]
 
 # true: will cause the UAV to take off
-# false: will switch the drone to offboard, but the service
-#     uav_manager/takeoff
-# needs to be called manually.
+# false: will perform all checks and enable control output, but the service
+#     uav_manager/takeoff needs to be called manually.
 handle_takeoff: true
 
 preflight_check:
@@ -21,7 +20,7 @@ preflight_check:
 
     max_speed: 0.3 # [m/s]
 
-  # the node with wait for the following topics and won't allow
+  # the node will wait for the following topics and won't allow
   # takeoff until some data apear on them
   topic_check:
 
@@ -29,8 +28,7 @@ preflight_check:
     timeout: 5.0 # [s], allowed timeout for the last accepted message
 
     # if "/" is provided at the beginning of topic_name, the topic name is considered as written,
-    # if there is no "/" at the beginning, UAV_NAME is automatically added in from of the topic name (/uav1/topic_name)
+    # if there is no "/" at the beginning, UAV_NAME is automatically added in front of the topic name (e.g., /uav1/topic_name)
     topics: [
       "estimation_manager/uav_state",
-      "control_manager/diagnostics",
     ]
