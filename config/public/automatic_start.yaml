@@ -31,4 +31,5 @@ preflight_check:
     # if there is no "/" at the beginning, UAV_NAME is automatically added in front of the topic name (e.g., /uav1/topic_name)
     topics: [
       "estimation_manager/uav_state",
+      "control_manager/diagnostics",
     ]
