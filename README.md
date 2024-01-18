@@ -11,14 +11,15 @@ The **Autostart** performs following checks:
 * connection to [HW Api](https://github.com/ctu-mrs/mrs_uav_hw_api#mrs-uav-hw-api-docs),
 * validity of current position of the UAV (takeoff outside safety area is not allowed),
 * limit on current maximum estimated speed (UAV should be static before takeoff),
-* the UAV height (if available),
+* the UAV height (if available) needs to suggest that the UAV is on the ground,
+* the gyro rates (if available) needs to be near zero,
 * availability of data on additional user-specified topics.
 
 ## Configuration and use
 
 ### Custom topics check
 
-The **Autostart** node allows the user to specify additional topics that have to be available before initiating takeoff procedure. If this check is enabled and the latest message received on one of the specified topics is older than __timeout__, the takeoff of the UAV will not be allowed.  
+The **Autostart** node allows the user to specify additional topics that have to be available before initiating takeoff procedure. If this check is enabled and the latest message received on one of the specified topics is older than __timeout__, the takeoff of the UAV will not be allowed.
 
 ```yaml
 preflight_check:
