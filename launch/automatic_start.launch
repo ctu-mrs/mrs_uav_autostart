@@ -43,6 +43,7 @@
       <remap from="~gazebo_spawner_diagnostics_in" to="/mrs_drone_spawner/diagnostics" />
       <remap from="~estimation_diag_in" to="estimation_manager/diagnostics" />
       <remap from="~distance_sensor_in" to="hw_api/distance_sensor" />
+      <remap from="~imu_in" to="hw_api/imu" />
 
         <!-- Publishers -->
       <remap from="~can_takeoff_out" to="~can_takeoff" />

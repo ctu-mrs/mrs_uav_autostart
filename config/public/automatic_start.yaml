@@ -29,6 +29,12 @@ preflight_check:
     enabled: true
     max_height: 0.8 # [m]
 
+  # takeoff not allowed if UAV's gyro report motion
+  gyro_check:
+
+    enabled: true
+    max_rate: 0.1 # [rad/s]
+
   # the node will wait for the following topics and won't allow
   # takeoff until some data apear on them
   topic_check:

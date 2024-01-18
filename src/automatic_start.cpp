@@ -22,6 +22,7 @@
 #include <mrs_msgs/EstimationDiagnostics.h>
 
 #include <sensor_msgs/Range.h>
+#include <sensor_msgs/Imu.h>
 
 #include <topic_tools/shape_shifter.h>
 
@@ -97,6 +98,7 @@ private:
   mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>               sh_hw_api_status_;
   mrs_lib::SubscribeHandler<mrs_msgs::HwApiCapabilities>         sh_hw_api_capabilities_;
   mrs_lib::SubscribeHandler<sensor_msgs::Range>                  sh_distance_sensor_;
+  mrs_lib::SubscribeHandler<sensor_msgs::Imu>                    sh_imu_;
   mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sh_control_manager_diag_;
   mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>     sh_uav_manager_diag_;
   mrs_lib::SubscribeHandler<mrs_msgs::GazeboSpawnerDiagnostics>  sh_gazebo_spawner_diag_;
@@ -145,6 +147,7 @@ private:
   bool topicCheck(void);
   bool preflightCheckSpeed(void);
   bool preflighCheckHeight(void);
+  bool preflighCheckGyro(void);
 
   bool is_gazebo_simulation_ = false;
 
@@ -176,6 +179,12 @@ private:
   bool      _height_check_enabled_ = false;
   double    _height_check_max_height_;
   ros::Time height_check_violated_time_;
+
+  // | ----------------- preflight gyro check ----------------- |
+
+  bool      _gyro_check_enabled_ = false;
+  double    _gyro_check_max_rate_;
+  ros::Time gyro_check_violated_time_;
 
   // | ---------------- generic topic subscribers --------------- |
 
@@ -239,6 +248,9 @@ void AutomaticStart::onInit() {
   param_loader.loadParam("preflight_check/height_check/enabled", _height_check_enabled_);
   param_loader.loadParam("preflight_check/height_check/max_height", _height_check_max_height_);
 
+  param_loader.loadParam("preflight_check/gyro_check/enabled", _gyro_check_enabled_);
+  param_loader.loadParam("preflight_check/gyro_check/max_rate", _gyro_check_max_rate_);
+
   param_loader.loadParam("preflight_check/topic_check/enabled", _topic_check_enabled_);
   param_loader.loadParam("preflight_check/topic_check/timeout", _topic_check_timeout_);
   param_loader.loadParam("preflight_check/topic_check/topics", _topic_check_topic_names_);
@@ -263,6 +275,7 @@ void AutomaticStart::onInit() {
   sh_hw_api_status_        = mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>(shopts, "hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
   sh_hw_api_capabilities_  = mrs_lib::SubscribeHandler<mrs_msgs::HwApiCapabilities>(shopts, "hw_api_capabilities_in");
   sh_distance_sensor_      = mrs_lib::SubscribeHandler<sensor_msgs::Range>(shopts, "distance_sensor_in");
+  sh_imu_                  = mrs_lib::SubscribeHandler<sensor_msgs::Imu>(shopts, "imu_in");
   sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diagnostics_in");
   sh_uav_manager_diag_     = mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>(shopts, "uav_manager_diagnostics_in");
   sh_gazebo_spawner_diag_  = mrs_lib::SubscribeHandler<mrs_msgs::GazeboSpawnerDiagnostics>(shopts, "gazebo_spawner_diagnostics_in",
@@ -310,6 +323,7 @@ void AutomaticStart::onInit() {
 
   speed_check_violated_time_  = ros::Time(0);
   height_check_violated_time_ = ros::Time(0);
+  gyro_check_violated_time_   = ros::Time(0);
 
   // | ------------------------- timers ------------------------- |
 
@@ -450,8 +464,9 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       bool speed_valid  = preflightCheckSpeed();
       bool height_valid = preflighCheckHeight();
+      bool gyros_valid  = preflighCheckGyro();
 
-      bool possibly_in_the_air = !speed_valid || !height_valid;
+      bool possibly_in_the_air = !speed_valid || !height_valid || !gyros_valid;
 
       if (possibly_in_the_air) {
 
@@ -818,6 +833,8 @@ bool AutomaticStart::topicCheck(void) {
 
 //}
 
+// | -------- preflight cheks for detecting flyign UAV -------- |
+
 /* preflightCheckSpeed() //{ */
 
 bool AutomaticStart::preflightCheckSpeed(void) {
@@ -875,6 +892,46 @@ bool AutomaticStart::preflighCheckHeight(void) {
   }
 
   if ((ros::Time::now() - height_check_violated_time_).toSec() < _preflight_check_time_window_) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
+//}
+
+/* preflighCheckGyro() //{ */
+
+bool AutomaticStart::preflighCheckGyro(void) {
+
+  if (!_gyro_check_enabled_) {
+    return true;
+  }
+
+  // | ----------------- is the check possible? ----------------- |
+
+  auto capabilities = sh_hw_api_capabilities_.getMsg();
+
+  if (!capabilities->produces_imu) {
+    return true;
+  }
+
+  // | -------------------- do we have data? -------------------- |
+
+  if (!sh_imu_.hasMsg()) {
+    ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: missing imu data for preflight gyro check");
+    return false;
+  }
+
+  auto gyros = sh_imu_.getMsg()->angular_velocity;
+
+  if (abs(gyros.x) > _gyro_check_max_rate_ || abs(gyros.y) > _gyro_check_max_rate_ || abs(gyros.z) > _gyro_check_max_rate_) {
+    gyro_check_violated_time_ = ros::Time::now();
+    ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: the angular velocity ([%.2f, %.2f, %.2f] rad/s) is over the limit (%.2f rad/s)", gyros.x, gyros.y, gyros.z,
+                      _gyro_check_max_rate_);
+  }
+
+  if ((ros::Time::now() - gyro_check_violated_time_).toSec() < _preflight_check_time_window_) {
     return false;
   } else {
     return true;
