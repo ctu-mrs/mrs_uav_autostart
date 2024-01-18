@@ -14,11 +14,20 @@ handle_takeoff: true
 
 preflight_check:
 
-  velocity_check:
+  # all the conditions must be met for the last <time_window> seconds
+  time_window: 5.0 # [s]
+
+  # takeoff not allowed if UAV's speed exceeds <max_speed>
+  speed_check:
 
     enabled: true
-
     max_speed: 0.3 # [m/s]
+
+  # takeoff not allowed if UAV's height sensor exceeds <max_height>
+  height_check:
+
+    enabled: true
+    max_height: 0.8 # [m]
 
   # the node will wait for the following topics and won't allow
   # takeoff until some data apear on them

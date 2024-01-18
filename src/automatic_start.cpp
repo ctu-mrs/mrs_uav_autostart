@@ -18,7 +18,10 @@
 #include <mrs_msgs/ValidateReference.h>
 #include <mrs_msgs/GazeboSpawnerDiagnostics.h>
 #include <mrs_msgs/HwApiStatus.h>
+#include <mrs_msgs/HwApiCapabilities.h>
 #include <mrs_msgs/EstimationDiagnostics.h>
+
+#include <sensor_msgs/Range.h>
 
 #include <topic_tools/shape_shifter.h>
 
@@ -92,6 +95,8 @@ private:
 
   mrs_lib::SubscribeHandler<mrs_msgs::EstimationDiagnostics>     sh_estimation_diag_;
   mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>               sh_hw_api_status_;
+  mrs_lib::SubscribeHandler<mrs_msgs::HwApiCapabilities>         sh_hw_api_capabilities_;
+  mrs_lib::SubscribeHandler<sensor_msgs::Range>                  sh_distance_sensor_;
   mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sh_control_manager_diag_;
   mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>     sh_uav_manager_diag_;
   mrs_lib::SubscribeHandler<mrs_msgs::GazeboSpawnerDiagnostics>  sh_gazebo_spawner_diag_;
@@ -109,7 +114,7 @@ private:
   // | ------------------- hw api diagnostics ------------------- |
 
   void              callbackHwApiStatus(const mrs_msgs::HwApiStatus::ConstPtr msg);
-  std::atomic<bool> got_hw_api_status_ = false;
+  std::atomic<bool> hw_api_connected_ = false;
   std::mutex        mutex_hw_api_status_;
 
   // | --------------- Gazebo spawner diagnostics --------------- |
@@ -138,7 +143,9 @@ private:
 
   bool isGazeboSimulation(void);
   bool topicCheck(void);
-  bool speedCheck(void);
+  bool preflightCheckSpeed(void);
+  bool preflighCheckHeight(void);
+
   bool is_gazebo_simulation_ = false;
 
   // | ---------------------- other params ---------------------- |
@@ -154,10 +161,21 @@ private:
   uint current_state = STATE_IDLE;
   void changeState(LandingStates_t new_state);
 
-  // | --------------------- velocity check --------------------- |
+  // | --------------------- preflight check -------------------- |
 
-  bool   _velocity_check_enabled_ = false;
-  double _velocity_check_max_speed_;
+  double _preflight_check_time_window_;
+
+  // | ------------------ preflight speed check ----------------- |
+
+  bool      _speed_check_enabled_ = false;
+  double    _speed_check_max_speed_;
+  ros::Time speed_check_violated_time_;
+
+  // | ----------------- preflight height check ----------------- |
+
+  bool      _height_check_enabled_ = false;
+  double    _height_check_max_height_;
+  ros::Time height_check_violated_time_;
 
   // | ---------------- generic topic subscribers --------------- |
 
@@ -213,8 +231,13 @@ void AutomaticStart::onInit() {
 
   param_loader.loadParam("handle_takeoff", _handle_takeoff_);
 
-  param_loader.loadParam("preflight_check/velocity_check/enabled", _velocity_check_enabled_);
-  param_loader.loadParam("preflight_check/velocity_check/max_speed", _velocity_check_max_speed_);
+  param_loader.loadParam("preflight_check/time_window", _preflight_check_time_window_);
+
+  param_loader.loadParam("preflight_check/speed_check/enabled", _speed_check_enabled_);
+  param_loader.loadParam("preflight_check/speed_check/max_speed", _speed_check_max_speed_);
+
+  param_loader.loadParam("preflight_check/height_check/enabled", _height_check_enabled_);
+  param_loader.loadParam("preflight_check/height_check/max_height", _height_check_max_height_);
 
   param_loader.loadParam("preflight_check/topic_check/enabled", _topic_check_enabled_);
   param_loader.loadParam("preflight_check/topic_check/timeout", _topic_check_timeout_);
@@ -238,6 +261,8 @@ void AutomaticStart::onInit() {
 
   sh_estimation_diag_      = mrs_lib::SubscribeHandler<mrs_msgs::EstimationDiagnostics>(shopts, "estimation_diag_in");
   sh_hw_api_status_        = mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>(shopts, "hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
+  sh_hw_api_capabilities_  = mrs_lib::SubscribeHandler<mrs_msgs::HwApiCapabilities>(shopts, "hw_api_capabilities_in");
+  sh_distance_sensor_      = mrs_lib::SubscribeHandler<sensor_msgs::Range>(shopts, "distance_sensor_in");
   sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diagnostics_in");
   sh_uav_manager_diag_     = mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>(shopts, "uav_manager_diagnostics_in");
   sh_gazebo_spawner_diag_  = mrs_lib::SubscribeHandler<mrs_msgs::GazeboSpawnerDiagnostics>(shopts, "gazebo_spawner_diagnostics_in",
@@ -280,6 +305,11 @@ void AutomaticStart::onInit() {
       generic_subscriber_vec_.push_back(tmp_subscriber);
     }
   }
+
+  // | --------------------- preflight check -------------------- |
+
+  speed_check_violated_time_  = ros::Time(0);
+  height_check_violated_time_ = ros::Time(0);
 
   // | ------------------------- timers ------------------------- |
 
@@ -358,7 +388,7 @@ void AutomaticStart::callbackHwApiStatus(const mrs_msgs::HwApiStatus::ConstPtr m
   }
 
   if (msg->connected) {
-    got_hw_api_status_ = true;
+    hw_api_connected_ = true;
   }
 }
 
@@ -400,10 +430,11 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   bool got_uav_manager_diag     = sh_uav_manager_diag_.hasMsg();
   bool got_control_manager_diag = sh_control_manager_diag_.hasMsg();
   bool got_estimation_diag      = sh_estimation_diag_.hasMsg();
+  bool got_hw_api               = sh_hw_api_status_.hasMsg() && sh_hw_api_capabilities_.hasMsg() && hw_api_connected_;
 
-  if (!got_control_manager_diag || !got_hw_api_status_ || !got_uav_manager_diag || !got_estimation_diag) {
+  if (!got_control_manager_diag || !got_hw_api || !got_uav_manager_diag || !got_estimation_diag) {
     ROS_WARN_THROTTLE(5.0, "[AutomaticStart]: waiting for data: ControlManager=%s, UavManager=%s, HW Api=%s, EstimationManager=%s",
-                      got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api_status_ ? "true" : "FALSE",
+                      got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api ? "true" : "FALSE",
                       got_estimation_diag ? "true" : "FALSE");
     return;
   }
@@ -415,8 +446,29 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
     case STATE_IDLE: {
 
-      bool   control_output   = sh_control_manager_diag_.getMsg()->output_enabled;
-      double time_from_arming = (ros::Time::now() - armed_time).toSec();
+      // | --------------------- preflight check -------------------- |
+
+      bool speed_valid  = preflightCheckSpeed();
+      bool height_valid = preflighCheckHeight();
+
+      bool possibly_in_the_air = !speed_valid || !height_valid;
+
+      if (possibly_in_the_air) {
+
+        ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: preflight check failed, the UAV is possibly in the air");
+
+        if (armed) {
+          ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: -- the UAV is also armed!! shutting down to prevent unwanted system activation");
+          ros::requestShutdown();
+        }
+
+        return;
+      }
+
+      // | -------------------- ready to takeoff -------------------- |
+
+      bool   control_output_enabled = sh_control_manager_diag_.getMsg()->output_enabled;
+      double time_from_arming       = (ros::Time::now() - armed_time).toSec();
 
       std_msgs::Bool can_takeoff_msg;
       can_takeoff_msg.data = false;
@@ -425,16 +477,15 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       bool position_valid = validateReference();
       bool got_topics     = topicCheck();
-      bool speed_valid    = speedCheck();
 
-      bool can_takeoff = got_topics && position_valid && speed_valid;
+      bool can_takeoff = got_topics && position_valid;
 
       // | ---------------------------------------------------------- |
 
       can_takeoff_msg.data = can_takeoff;
       ph_can_takeoff_.publish(can_takeoff_msg);
 
-      if (armed && !control_output) {
+      if (armed && !control_output_enabled) {
 
         if (can_takeoff) {
 
@@ -472,7 +523,7 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       }
 
       // when armed and in offboard, takeoff
-      if (armed && offboard && control_output) {
+      if (armed && offboard && control_output_enabled) {
 
         double armed_time_diff    = (ros::Time::now() - armed_time).toSec();
         double offboard_time_diff = (ros::Time::now() - offboard_time).toSec();
@@ -520,8 +571,7 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       break;
     }
   }
-
-}  // namespace automatic_start
+}
 
 //}
 
@@ -673,7 +723,7 @@ bool AutomaticStart::toggleControlOutput(const bool& value) {
 
 bool AutomaticStart::disarm() {
 
-  if (!got_hw_api_status_) {
+  if (!hw_api_connected_) {
 
     ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: cannot disarm, missing HW API status!");
 
@@ -768,29 +818,67 @@ bool AutomaticStart::topicCheck(void) {
 
 //}
 
-/* velocityCheck() //{ */
+/* preflightCheckSpeed() //{ */
 
-bool AutomaticStart::speedCheck(void) {
+bool AutomaticStart::preflightCheckSpeed(void) {
 
-  if (!_velocity_check_enabled_) {
+  if (!_speed_check_enabled_) {
     return true;
-  }
-
-  if (!sh_estimation_diag_.hasMsg()) {
-    return false;
   }
 
   auto estimation_diag = sh_estimation_diag_.getMsg();
 
-  double speed =
-      sqrt(pow(estimation_diag->velocity.linear.x, 2.0) + pow(estimation_diag->velocity.linear.y, 2.0) + pow(estimation_diag->velocity.linear.z, 2.0));
+  double speed = std::hypot(estimation_diag->velocity.linear.x, estimation_diag->velocity.linear.y, estimation_diag->velocity.linear.z);
 
-  if (speed > _velocity_check_max_speed_) {
-    ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: the estimated speed (%.2f ms^-2) is over the limit (%.2f ms^-2)", speed, _velocity_check_max_speed_);
+  if (speed > _speed_check_max_speed_) {
+    speed_check_violated_time_ = ros::Time::now();
+    ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: the estimated speed (%.2f ms^-2) was over the limit (%.2f ms^-2)", speed, _speed_check_max_speed_);
+  }
+
+  if ((ros::Time::now() - speed_check_violated_time_).toSec() < _preflight_check_time_window_) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
+//}
+
+/* preflighCheckHeight() //{ */
+
+bool AutomaticStart::preflighCheckHeight(void) {
+
+  if (!_height_check_enabled_) {
+    return true;
+  }
+
+  // | ----------------- is the check possible? ----------------- |
+
+  auto capabilities = sh_hw_api_capabilities_.getMsg();
+
+  if (!capabilities->produces_distance_sensor) {
+    return true;
+  }
+
+  // | -------------------- do we have data? -------------------- |
+
+  if (!sh_distance_sensor_.hasMsg()) {
+    ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: missing distance sensor data for preflight height check");
     return false;
   }
 
-  return true;
+  double height = sh_distance_sensor_.getMsg()->range;
+
+  if (height > _height_check_max_height_) {
+    height_check_violated_time_ = ros::Time::now();
+    ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: the height (%.2f m) is over the limit (%.2f m)", height, _height_check_max_height_);
+  }
+
+  if ((ros::Time::now() - height_check_violated_time_).toSec() < _preflight_check_time_window_) {
+    return false;
+  } else {
+    return true;
+  }
 }
 
 //}

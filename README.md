@@ -10,7 +10,8 @@ The **Autostart** performs following checks:
 * availability of [Estimation Manager](https://github.com/ctu-mrs/mrs_uav_managers#estimationmanager),
 * connection to [HW Api](https://github.com/ctu-mrs/mrs_uav_hw_api#mrs-uav-hw-api-docs),
 * validity of current position of the UAV (takeoff outside safety area is not allowed),
-* limit on current maximum estimated velocity (UAV should be static before takeoff),
+* limit on current maximum estimated speed (UAV should be static before takeoff),
+* the UAV height (if available),
 * availability of data on additional user-specified topics.
 
 ## Configuration and use
