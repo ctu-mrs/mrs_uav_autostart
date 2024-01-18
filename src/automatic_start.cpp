@@ -849,7 +849,7 @@ bool AutomaticStart::preflightCheckSpeed(void) {
 
   if (speed > _speed_check_max_speed_) {
     speed_check_violated_time_ = ros::Time::now();
-    ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: the estimated speed (%.2f ms^-2) was over the limit (%.2f ms^-2)", speed, _speed_check_max_speed_);
+    ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: the estimated speed (%.2f ms^-2) is over the limit (%.2f ms^-2)", speed, _speed_check_max_speed_);
   }
 
   if ((ros::Time::now() - speed_check_violated_time_).toSec() < _preflight_check_time_window_) {
