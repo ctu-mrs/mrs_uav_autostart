@@ -43,7 +43,7 @@ private:
 
 public:
   Topic(std::string topic_name) : topic_name_(topic_name) {
-    last_time_ = ros::Time(0);
+    last_time_ = ros::Time::UNINITIALIZED;
   }
 
   void updateTime(void) {
@@ -319,15 +319,11 @@ void AutomaticStart::onInit() {
     }
   }
 
-  // | --------------------- preflight check -------------------- |
-
-  speed_check_violated_time_  = ros::Time(0);
-  height_check_violated_time_ = ros::Time(0);
-  gyro_check_violated_time_   = ros::Time(0);
-
   // | ------------------------- timers ------------------------- |
 
   timer_main_ = nh_.createTimer(ros::Rate(_main_timer_rate_), &AutomaticStart::timerMain, this);
+
+  // | --------------------- finish the init -------------------- |
 
   is_initialized_ = true;
 
@@ -482,8 +478,7 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       // | -------------------- ready to takeoff -------------------- |
 
-      bool   control_output_enabled = sh_control_manager_diag_.getMsg()->output_enabled;
-      double time_from_arming       = (ros::Time::now() - armed_time).toSec();
+      bool control_output_enabled = sh_control_manager_diag_.getMsg()->output_enabled;
 
       std_msgs::Bool can_takeoff_msg;
       can_takeoff_msg.data = false;
@@ -511,7 +506,9 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           }
         }
 
-        if (time_from_arming > _control_output_timeout_) {
+        double time_from_arming = (ros::Time::now() - armed_time).toSec();
+
+        if (armed_time != ros::Time::UNINITIALIZED && time_from_arming > _control_output_timeout_) {
 
           ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: could not set control output ON for %.2f secs, disarming", _control_output_timeout_);
           disarm();
@@ -540,10 +537,10 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       // when armed and in offboard, takeoff
       if (armed && offboard && control_output_enabled) {
 
-        double armed_time_diff    = (ros::Time::now() - armed_time).toSec();
-        double offboard_time_diff = (ros::Time::now() - offboard_time).toSec();
+        ros::Duration armed_time_diff    = ros::Time::now() - armed_time;
+        ros::Duration offboard_time_diff = ros::Time::now() - offboard_time;
 
-        if ((armed_time_diff > _safety_timeout_) && (offboard_time_diff > _safety_timeout_)) {
+        if (armed_time_diff > ros::Duration(_safety_timeout_) && offboard_time_diff > ros::Duration(_safety_timeout_)) {
 
           if (_handle_takeoff_) {
             changeState(STATE_TAKEOFF);
@@ -553,7 +550,7 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
         } else {
 
-          double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff : offboard_time_diff;
+          double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff.toSec() : offboard_time_diff.toSec();
 
           ROS_WARN_THROTTLE(1.0, "taking off in %.0f", (_safety_timeout_ - min));
         }
@@ -817,7 +814,10 @@ bool AutomaticStart::topicCheck(void) {
   if (_topic_check_enabled_) {
 
     for (int i = 0; i < int(topic_check_topics_.size()); i++) {
-      if ((ros::Time::now() - topic_check_topics_[i].getTime()).toSec() > _topic_check_timeout_) {
+
+      if (topic_check_topics_[i].getTime() != ros::Time::UNINITIALIZED &&
+          (ros::Time::now() - topic_check_topics_[i].getTime()) > ros::Duration(_topic_check_timeout_)) {
+
         missing_topics << std::endl << "\t" << topic_check_topics_[i].getTopicName();
         got_topics = false;
       }
@@ -852,7 +852,8 @@ bool AutomaticStart::preflightCheckSpeed(void) {
     ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: the estimated speed (%.2f ms^-2) is over the limit (%.2f ms^-2)", speed, _speed_check_max_speed_);
   }
 
-  if ((ros::Time::now() - speed_check_violated_time_).toSec() < _preflight_check_time_window_) {
+  if (speed_check_violated_time_ != ros::Time::UNINITIALIZED &&
+      (ros::Time::now() - speed_check_violated_time_) < ros::Duration(_preflight_check_time_window_)) {
     return false;
   } else {
     return true;
@@ -891,7 +892,8 @@ bool AutomaticStart::preflighCheckHeight(void) {
     ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: the height (%.2f m) is over the limit (%.2f m)", height, _height_check_max_height_);
   }
 
-  if ((ros::Time::now() - height_check_violated_time_).toSec() < _preflight_check_time_window_) {
+  if (height_check_violated_time_ != ros::Time::UNINITIALIZED &&
+      (ros::Time::now() - height_check_violated_time_) < ros::Duration(_preflight_check_time_window_)) {
     return false;
   } else {
     return true;
@@ -931,7 +933,7 @@ bool AutomaticStart::preflighCheckGyro(void) {
                       _gyro_check_max_rate_);
   }
 
-  if ((ros::Time::now() - gyro_check_violated_time_).toSec() < _preflight_check_time_window_) {
+  if (gyro_check_violated_time_ != ros::Time::UNINITIALIZED && (ros::Time::now() - gyro_check_violated_time_) < ros::Duration(_preflight_check_time_window_)) {
     return false;
   } else {
     return true;
