@@ -15,7 +15,7 @@ bool Tester::test() {
   if (!success) {
     return true;
   } else {
-    ROS_ERROR("[%s]: takeoff initiated, this should not be possible", ros::this_node::getName().c_str());
+    ROS_ERROR("[%s]: takeoff initiated, this should not be possible: '%s'", ros::this_node::getName().c_str(), message.c_str());
     return false;
   }
 }

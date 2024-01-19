@@ -815,7 +815,7 @@ bool AutomaticStart::topicCheck(void) {
 
     for (int i = 0; i < int(topic_check_topics_.size()); i++) {
 
-      if (topic_check_topics_[i].getTime() != ros::Time::UNINITIALIZED &&
+      if (topic_check_topics_[i].getTime() == ros::Time::UNINITIALIZED ||
           (ros::Time::now() - topic_check_topics_[i].getTime()) > ros::Duration(_topic_check_timeout_)) {
 
         missing_topics << std::endl << "\t" << topic_check_topics_[i].getTopicName();
