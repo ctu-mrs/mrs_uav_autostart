@@ -881,8 +881,7 @@ bool AutomaticStart::preflighCheckHeight(void) {
   // | -------------------- do we have data? -------------------- |
 
   if (!sh_distance_sensor_.hasMsg()) {
-    ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: missing distance sensor data for preflight height check");
-    return false;
+    return true;
   }
 
   double height = sh_distance_sensor_.getMsg()->range;
@@ -921,8 +920,7 @@ bool AutomaticStart::preflighCheckGyro(void) {
   // | -------------------- do we have data? -------------------- |
 
   if (!sh_imu_.hasMsg()) {
-    ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: missing imu data for preflight gyro check");
-    return false;
+    return true;
   }
 
   auto gyros = sh_imu_.getMsg()->angular_velocity;
