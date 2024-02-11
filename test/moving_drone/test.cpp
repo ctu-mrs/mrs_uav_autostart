@@ -36,13 +36,28 @@ void Tester::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
 bool Tester::test() {
 
-  auto [success, message] = takeoff();
+  std::shared_ptr<mrs_uav_testing::UAVHandler> uh;
 
-  if (!success) {
-    return true;
-  } else {
-    ROS_ERROR("[%s]: takeoff initiated, this should not be possible", ros::this_node::getName().c_str());
-    return false;
+  {
+    auto [uhopt, message] = getUAVHandler(_uav_name_);
+
+    if (!uhopt) {
+      ROS_ERROR("[%s]: Failed obtain handler for '%s': '%s'", ros::this_node::getName().c_str(), _uav_name_.c_str(), message.c_str());
+      return false;
+    }
+
+    uh = uhopt.value();
+  }
+
+  {
+    auto [success, message] = uh->takeoff();
+
+    if (!success) {
+      return true;
+    } else {
+      ROS_ERROR("[%s]: takeoff initiated, this should not be possible", ros::this_node::getName().c_str());
+      return false;
+    }
   }
 }
 

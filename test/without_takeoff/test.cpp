@@ -20,6 +20,19 @@ Tester::Tester() : mrs_uav_testing::TestGeneric() {
 
 bool Tester::test() {
 
+  std::shared_ptr<mrs_uav_testing::UAVHandler> uh;
+
+  {
+    auto [uhopt, message] = getUAVHandler(_uav_name_);
+
+    if (!uhopt) {
+      ROS_ERROR("[%s]: Failed obtain handler for '%s': '%s'", ros::this_node::getName().c_str(), _uav_name_.c_str(), message.c_str());
+      return false;
+    }
+
+    uh = uhopt.value();
+  }
+
   // | ---------------- wait for ready to takeoff --------------- |
 
   while (true) {
@@ -30,7 +43,7 @@ bool Tester::test() {
 
     ROS_INFO_THROTTLE(1.0, "[%s]: waiting for the MRS UAV System", name_.c_str());
 
-    if (mrsSystemReady()) {
+    if (uh->mrsSystemReady()) {
       ROS_INFO("[%s]: MRS UAV System is ready", name_.c_str());
       break;
     }
@@ -47,7 +60,7 @@ bool Tester::test() {
     srv.request.data = true;
 
     {
-      bool service_call = sch_arming_.call(srv);
+      bool service_call = uh->sch_arming_.call(srv);
 
       if (!service_call || !srv.response.success) {
         return false;
@@ -61,7 +74,7 @@ bool Tester::test() {
 
   // | --------------------- check if armed --------------------- |
 
-  if (!sh_hw_api_status_.getMsg()->armed) {
+  if (!uh->sh_hw_api_status_.getMsg()->armed) {
     return false;
   }
 
@@ -71,7 +84,7 @@ bool Tester::test() {
     std_srvs::Trigger srv;
 
     {
-      bool service_call = sch_offboard_.call(srv);
+      bool service_call = uh->sch_offboard_.call(srv);
 
       if (!service_call || !srv.response.success) {
         return false;
@@ -85,7 +98,7 @@ bool Tester::test() {
 
   // | ------------------ check if in offboard ------------------ |
 
-  if (!sh_hw_api_status_.getMsg()->offboard) {
+  if (!uh->sh_hw_api_status_.getMsg()->offboard) {
     return false;
   }
 
@@ -115,7 +128,7 @@ bool Tester::test() {
 
     ROS_INFO_THROTTLE(1.0, "[%s]: waiting for the takeoff to finish", name_.c_str());
 
-    if (sh_control_manager_diag_.getMsg()->flying_normally) {
+    if (uh->sh_control_manager_diag_.getMsg()->flying_normally) {
 
       return true;
     }

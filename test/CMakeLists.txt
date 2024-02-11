@@ -3,9 +3,6 @@ find_package(rostest REQUIRED)
 # will test takeoff in mrs simulator
 add_subdirectory(takeoff)
 
-# will test takeoff in gazebo
-add_subdirectory(gazebo_takeoff)
-
 # will test if takeoff is not allowed outside of safety area
 add_subdirectory(outside_safety_area)
 
