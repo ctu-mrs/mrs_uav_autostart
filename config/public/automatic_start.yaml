@@ -33,7 +33,7 @@ preflight_check:
   gyro_check:
 
     enabled: true
-    max_rate: 0.1 # [rad/s]
+    max_rate: 1.0 # [rad/s]
 
   # the node will wait for the following topics and won't allow
   # takeoff until some data apear on them

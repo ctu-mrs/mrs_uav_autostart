@@ -469,8 +469,18 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: preflight check failed, the UAV is possibly in the air");
 
         if (armed) {
-          ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: -- the UAV is also armed!! shutting down to prevent unwanted system activation");
-          ros::requestShutdown();
+
+          ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: -- the UAV is also armed!! finishing to prevent unwanted system activation");
+
+          bool res = toggleControlOutput(false);
+
+          if (!res) {
+            ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: could not set control output OFF");
+          }
+
+          changeState(STATE_FINISHED);
+
+          return;
         }
 
         return;

@@ -19,17 +19,17 @@ public:
 
 Tester::Tester() : mrs_uav_testing::TestGeneric() {
 
-  ph_velocity_ = mrs_lib::PublisherHandler<mrs_msgs::HwApiVelocityHdgCmd>(nh_, "/multirotor_simulator/" + _uav_name_ + "/velocity_hdg_cmd");
+  ph_velocity_ = mrs_lib::PublisherHandler<mrs_msgs::HwApiVelocityHdgCmd>(nh_, "/multirotor_simulator/uav1/velocity_hdg_cmd");
 
-  timer_main_ = nh_.createTimer(ros::Rate(100.0), &Tester::timerMain, this, false, true);
+  timer_main_ = nh_.createTimer(ros::Rate(100.0), &Tester::timerMain, this, false, false);
 }
 
 void Tester::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
   mrs_msgs::HwApiVelocityHdgCmd msg;
 
-  msg.velocity.x = 0.5;
-  msg.velocity.z = 0.1;
+  msg.velocity.x = 1.0;
+  msg.velocity.z = 1.5;
 
   ph_velocity_.publish(msg);
 }
@@ -50,14 +50,55 @@ bool Tester::test() {
   }
 
   {
+    while (ros::ok()) {
+      if (uh->mrsSystemReady()) {
+        break;
+      }
+    }
+  }
+
+  sleep(1.0);
+
+  {
+    std_srvs::SetBool srv;
+
+    srv.request.data = true;
+
+    if (!uh->sch_arming_.call(srv)) {
+      ROS_ERROR("[%s]: Failed to arm the UAV '%s'", ros::this_node::getName().c_str(), srv.response.message.c_str());
+      return false;
+    }
+  }
+
+  sleep(1.0);
+
+  timer_main_.start();
+
+  sleep(5.0);
+
+  if (uh->getHeightAgl() < 1.5) {
+    ROS_ERROR("[%s]: the UAV is not as high agl as it should be", ros::this_node::getName().c_str());
+    return false;
+  }
+
+  {
     auto [success, message] = uh->takeoff();
 
-    if (!success) {
-      return true;
-    } else {
+    if (success) {
       ROS_ERROR("[%s]: takeoff initiated, this should not be possible", ros::this_node::getName().c_str());
       return false;
     }
+  }
+
+  sleep(1.0);
+
+  if (uh->isOutputEnabled()) {
+
+    ROS_ERROR("[%s]: control output is still enabled!", ros::this_node::getName().c_str());
+    return false;
+
+  } else {
+    return true;
   }
 }
 
