@@ -437,6 +437,8 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     return;
   }
 
+  ROS_INFO("[AutomaticStart]: pes %.f", 0 / 0);
+
   bool got_uav_manager_diag     = sh_uav_manager_diag_.hasMsg();
   bool got_control_manager_diag = sh_control_manager_diag_.hasMsg();
   bool got_estimation_diag      = sh_estimation_diag_.hasMsg();
