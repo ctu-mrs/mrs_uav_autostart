@@ -2,6 +2,9 @@ name: rostest
 
 on:
 
+  push:
+    branches: [ test_coredump ]
+
   workflow_dispatch:
 
 concurrency:
