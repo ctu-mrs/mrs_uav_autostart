@@ -2,10 +2,10 @@ name: rostest
 
 on:
 
+  workflow_dispatch:
+
   push:
     branches: [ test_coredump ]
-
-  workflow_dispatch:
 
 concurrency:
   group: ${{ github.ref }}
