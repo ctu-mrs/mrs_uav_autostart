@@ -134,6 +134,8 @@ private:
   ros::Time offboard_time_;
   bool      offboard_ = false;
 
+  bool we_toggled_output_ = false;
+
   // | ------------------------ routines ------------------------ |
 
   bool takeoff();
@@ -472,10 +474,13 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
           ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: -- the UAV is also armed!! finishing to prevent unwanted system activation");
 
-          bool res = toggleControlOutput(false);
+          if (we_toggled_output_) {
 
-          if (!res) {
-            ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: could not set control output OFF");
+            bool res = toggleControlOutput(false);
+
+            if (!res) {
+              ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: could not set control output OFF");
+            }
           }
 
           changeState(STATE_FINISHED);
@@ -513,6 +518,8 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
           if (!res) {
             ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: could not set control output ON");
+          } else {
+            we_toggled_output_ = true;
           }
         }
 
