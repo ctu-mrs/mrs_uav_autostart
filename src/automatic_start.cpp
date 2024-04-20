@@ -303,7 +303,7 @@ void AutomaticStart::onInit() {
 
     for (int i = 0; i < int(_topic_check_topic_names_.size()); i++) {
 
-      std::string topic_name = _topic_check_topic_names_[i];
+      std::string topic_name = _topic_check_topic_names_.at(i);
 
       if (topic_name.at(0) != '/') {
         topic_name = "/" + _uav_name_ + "/" + topic_name;
@@ -342,7 +342,7 @@ void AutomaticStart::onInit() {
 
 void AutomaticStart::genericCallback([[maybe_unused]] const topic_tools::ShapeShifter::ConstPtr& msg, [[maybe_unused]] const std::string& topic_name,
                                      const int id) {
-  topic_check_topics_[id].updateTime();
+  topic_check_topics_.at(id).updateTime();
 }
 
 //}
@@ -832,10 +832,10 @@ bool AutomaticStart::topicCheck(void) {
 
     for (int i = 0; i < int(topic_check_topics_.size()); i++) {
 
-      if (topic_check_topics_[i].getTime() == ros::Time::UNINITIALIZED ||
-          (ros::Time::now() - topic_check_topics_[i].getTime()) > ros::Duration(_topic_check_timeout_)) {
+      if (topic_check_topics_.at(i).getTime() == ros::Time::UNINITIALIZED ||
+          (ros::Time::now() - topic_check_topics_.at(i).getTime()) > ros::Duration(_topic_check_timeout_)) {
 
-        missing_topics << std::endl << "\t" << topic_check_topics_[i].getTopicName();
+        missing_topics << std::endl << "\t" << topic_check_topics_.at(i).getTopicName();
         got_topics = false;
       }
     }
