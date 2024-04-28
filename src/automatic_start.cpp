@@ -113,11 +113,13 @@ private:
   void       timerMain(const ros::TimerEvent& event);
   double     _main_timer_rate_;
 
-  // | ------------------- hw api diagnostics ------------------- |
+  // | ------------------------- hw api ------------------------- |
 
   void              callbackHwApiStatus(const mrs_msgs::HwApiStatus::ConstPtr msg);
   std::atomic<bool> hw_api_connected_ = false;
   std::mutex        mutex_hw_api_status_;
+
+  void callbackHwApiCapabilities(const mrs_msgs::HwApiCapabilities::ConstPtr msg);
 
   // | --------------- Gazebo spawner diagnostics --------------- |
 
@@ -273,9 +275,10 @@ void AutomaticStart::onInit() {
   shopts.queue_size         = 10;
   shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
-  sh_estimation_diag_      = mrs_lib::SubscribeHandler<mrs_msgs::EstimationDiagnostics>(shopts, "estimation_diag_in");
-  sh_hw_api_status_        = mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>(shopts, "hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
-  sh_hw_api_capabilities_  = mrs_lib::SubscribeHandler<mrs_msgs::HwApiCapabilities>(shopts, "hw_api_capabilities_in");
+  sh_estimation_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::EstimationDiagnostics>(shopts, "estimation_diag_in");
+  sh_hw_api_status_   = mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>(shopts, "hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
+  sh_hw_api_capabilities_ =
+      mrs_lib::SubscribeHandler<mrs_msgs::HwApiCapabilities>(shopts, "hw_api_capabilities_in", &AutomaticStart::callbackHwApiCapabilities, this);
   sh_distance_sensor_      = mrs_lib::SubscribeHandler<sensor_msgs::Range>(shopts, "distance_sensor_in");
   sh_imu_                  = mrs_lib::SubscribeHandler<sensor_msgs::Imu>(shopts, "imu_in");
   sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diagnostics_in");
@@ -347,7 +350,7 @@ void AutomaticStart::genericCallback([[maybe_unused]] const topic_tools::ShapeSh
 
 //}
 
-/* callbackHwApiDiag() //{ */
+/* callbackHwApiStatus() //{ */
 
 void AutomaticStart::callbackHwApiStatus(const mrs_msgs::HwApiStatus::ConstPtr msg) {
 
@@ -355,7 +358,7 @@ void AutomaticStart::callbackHwApiStatus(const mrs_msgs::HwApiStatus::ConstPtr m
     return;
   }
 
-  ROS_INFO_ONCE("[AutomaticStart]: getting HW API diagnostics");
+  ROS_INFO_ONCE("[AutomaticStart]: getting HW API status");
 
   std::scoped_lock lock(mutex_hw_api_status_);
 
@@ -402,6 +405,19 @@ void AutomaticStart::callbackHwApiStatus(const mrs_msgs::HwApiStatus::ConstPtr m
   if (msg->connected) {
     hw_api_connected_ = true;
   }
+}
+
+//}
+
+/* callbackHwApiCapabilities() //{ */
+
+void AutomaticStart::callbackHwApiCapabilities([[maybe_unused]] const mrs_msgs::HwApiCapabilities::ConstPtr msg) {
+
+  if (!is_initialized_) {
+    return;
+  }
+
+  ROS_INFO_ONCE("[AutomaticStart]: getting HW API capabilities");
 }
 
 //}
@@ -860,6 +876,10 @@ bool AutomaticStart::preflightCheckSpeed(void) {
     return true;
   }
 
+  if (!sh_estimation_diag_.hasMsg()) {
+    return false;
+  }
+
   auto estimation_diag = sh_estimation_diag_.getMsg();
 
   double speed = std::hypot(estimation_diag->velocity.linear.x, estimation_diag->velocity.linear.y, estimation_diag->velocity.linear.z);
@@ -888,6 +908,10 @@ bool AutomaticStart::preflighCheckHeight(void) {
   }
 
   // | ----------------- is the check possible? ----------------- |
+
+  if (!sh_hw_api_capabilities_.hasMsg()) {
+    return false;
+  }
 
   auto capabilities = sh_hw_api_capabilities_.getMsg();
 
@@ -927,6 +951,10 @@ bool AutomaticStart::preflighCheckGyro(void) {
   }
 
   // | ----------------- is the check possible? ----------------- |
+
+  if (!sh_hw_api_capabilities_.hasMsg()) {
+    return false;
+  }
 
   auto capabilities = sh_hw_api_capabilities_.getMsg();
 
