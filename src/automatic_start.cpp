@@ -570,22 +570,23 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       // when armed and in offboard, takeoff
       if (armed && offboard && control_output_enabled) {
 
-        ros::Duration armed_time_diff    = ros::Time::now() - armed_time;
-        ros::Duration offboard_time_diff = ros::Time::now() - offboard_time;
-
-        if (armed_time_diff > ros::Duration(_safety_timeout_) && offboard_time_diff > ros::Duration(_safety_timeout_)) {
-
-          if (_handle_takeoff_) {
-            changeState(STATE_TAKEOFF);
-          } else {
-            changeState(STATE_FINISHED);
-          }
-
+        if (!_handle_takeoff_) {
+          changeState(STATE_FINISHED);
         } else {
 
-          double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff.toSec() : offboard_time_diff.toSec();
+          ros::Duration armed_time_diff    = ros::Time::now() - armed_time;
+          ros::Duration offboard_time_diff = ros::Time::now() - offboard_time;
 
-          ROS_WARN_THROTTLE(1.0, "taking off in %.0f", (_safety_timeout_ - min));
+          if (armed_time_diff > ros::Duration(_safety_timeout_) && offboard_time_diff > ros::Duration(_safety_timeout_)) {
+
+            changeState(STATE_TAKEOFF);
+
+          } else {
+
+            double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff.toSec() : offboard_time_diff.toSec();
+
+            ROS_WARN_THROTTLE(1.0, "taking off in %.0f", (_safety_timeout_ - min));
+          }
         }
       }
 
