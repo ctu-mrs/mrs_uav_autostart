@@ -20,6 +20,7 @@ set(CATKIN_DEPENDENCIES
   std_srvs
   mrs_msgs
   mrs_lib
+  mrs_errorgraph
   nodelet
   std_msgs
   topic_tools
