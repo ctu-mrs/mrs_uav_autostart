@@ -54,6 +54,8 @@
       <remap from="~arm_out" to="hw_api/arming" />
       <remap from="~validate_reference_out" to="control_manager/validate_reference_2d" />
 
+      <remap from="~errors" to="errors" />
+
     </node>
 
   </group>

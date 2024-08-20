@@ -18,6 +18,7 @@
   <depend>std_srvs</depend>
   <depend>mrs_msgs</depend>
   <depend>mrs_lib</depend>
+  <depend>mrs_errorgraph</depend>
   <depend>nodelet</depend>
   <depend>std_msgs</depend>
   <depend>topic_tools</depend>

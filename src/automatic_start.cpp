@@ -8,6 +8,8 @@
 #include <mrs_lib/subscribe_handler.h>
 #include <mrs_lib/publisher_handler.h>
 
+#include <mrs_errorgraph/error_publisher.h>
+
 #include <std_msgs/Bool.h>
 
 #include <std_srvs/Trigger.h>
@@ -84,6 +86,8 @@ private:
 
   std::string _uav_name_;
   bool        _simulation_;
+
+  std::unique_ptr<mrs_errorgraph::ErrorPublisher> error_publisher_;
 
   // | --------------------- service clients -------------------- |
 
@@ -213,6 +217,8 @@ void AutomaticStart::onInit() {
 
   ros::Time::waitForValid();
 
+  error_publisher_ = std::make_unique<mrs_errorgraph::ErrorPublisher>(nh_, "AutomaticStart", "main");
+
   armed_      = false;
   armed_time_ = ros::Time(0);
 
@@ -261,7 +267,8 @@ void AutomaticStart::onInit() {
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[AutomaticStart]: Could not load all parameters!");
-    ros::shutdown();
+    error_publisher_->addOneshotError("Could not load all parameters.");
+    error_publisher_->flushAndShutdown();
   }
 
   // | ----------------------- subscribers ---------------------- |
@@ -464,6 +471,15 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     ROS_WARN_THROTTLE(5.0, "[AutomaticStart]: waiting for data: ControlManager=%s, UavManager=%s, HW Api=%s, EstimationManager=%s",
                       got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api ? "true" : "FALSE",
                       got_estimation_diag ? "true" : "FALSE");
+
+    if (!got_uav_manager_diag)
+      error_publisher_->addWaitingForNodeError({"UavManager", "main"});
+    if (!got_control_manager_diag)
+      error_publisher_->addWaitingForNodeError({"ControlManager", "main"});
+    if (!got_estimation_diag)
+      error_publisher_->addWaitingForNodeError({"EstimationManager", "main"});
+    if (!got_hw_api)
+      error_publisher_->addWaitingForNodeError({"HwApiManager", "main"});
     return;
   }
 
