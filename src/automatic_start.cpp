@@ -482,7 +482,7 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       bool possibly_in_the_air = !speed_valid || !height_valid || !gyros_valid;
 
-      if (possibly_in_the_air) {
+      if (!offboard && possibly_in_the_air) {
 
         ROS_WARN_THROTTLE(1.0, "[AutomaticStart]: preflight check failed, the UAV is possibly in the air");
 
