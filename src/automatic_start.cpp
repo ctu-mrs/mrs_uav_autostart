@@ -14,6 +14,7 @@
 #include <std_srvs/SetBool.h>
 
 #include <mrs_msgs/ControlManagerDiagnostics.h>
+#include <mrs_msgs/SafetyAreaManagerDiagnostics.h>
 #include <mrs_msgs/UavManagerDiagnostics.h>
 #include <mrs_msgs/ValidateReference.h>
 #include <mrs_msgs/GazeboSpawnerDiagnostics.h>
@@ -94,14 +95,15 @@ private:
 
   // | ----------------------- subscribers ---------------------- |
 
-  mrs_lib::SubscribeHandler<mrs_msgs::EstimationDiagnostics>     sh_estimation_diag_;
-  mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>               sh_hw_api_status_;
-  mrs_lib::SubscribeHandler<mrs_msgs::HwApiCapabilities>         sh_hw_api_capabilities_;
-  mrs_lib::SubscribeHandler<sensor_msgs::Range>                  sh_distance_sensor_;
-  mrs_lib::SubscribeHandler<sensor_msgs::Imu>                    sh_imu_;
-  mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sh_control_manager_diag_;
-  mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>     sh_uav_manager_diag_;
-  mrs_lib::SubscribeHandler<mrs_msgs::GazeboSpawnerDiagnostics>  sh_gazebo_spawner_diag_;
+  mrs_lib::SubscribeHandler<mrs_msgs::EstimationDiagnostics>        sh_estimation_diag_;
+  mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>                  sh_hw_api_status_;
+  mrs_lib::SubscribeHandler<mrs_msgs::HwApiCapabilities>            sh_hw_api_capabilities_;
+  mrs_lib::SubscribeHandler<sensor_msgs::Range>                     sh_distance_sensor_;
+  mrs_lib::SubscribeHandler<sensor_msgs::Imu>                       sh_imu_;
+  mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>    sh_control_manager_diag_;
+  mrs_lib::SubscribeHandler<mrs_msgs::SafetyAreaManagerDiagnostics> sh_safety_area_manager_diag_;
+  mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>        sh_uav_manager_diag_;
+  mrs_lib::SubscribeHandler<mrs_msgs::GazeboSpawnerDiagnostics>     sh_gazebo_spawner_diag_;
 
   // | ----------------------- publishers ----------------------- |
 
@@ -279,11 +281,12 @@ void AutomaticStart::onInit() {
   sh_hw_api_status_   = mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>(shopts, "hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
   sh_hw_api_capabilities_ =
       mrs_lib::SubscribeHandler<mrs_msgs::HwApiCapabilities>(shopts, "hw_api_capabilities_in", &AutomaticStart::callbackHwApiCapabilities, this);
-  sh_distance_sensor_      = mrs_lib::SubscribeHandler<sensor_msgs::Range>(shopts, "distance_sensor_in");
-  sh_imu_                  = mrs_lib::SubscribeHandler<sensor_msgs::Imu>(shopts, "imu_in");
-  sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diagnostics_in");
-  sh_uav_manager_diag_     = mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>(shopts, "uav_manager_diagnostics_in");
-  sh_gazebo_spawner_diag_  = mrs_lib::SubscribeHandler<mrs_msgs::GazeboSpawnerDiagnostics>(shopts, "gazebo_spawner_diagnostics_in",
+  sh_distance_sensor_          = mrs_lib::SubscribeHandler<sensor_msgs::Range>(shopts, "distance_sensor_in");
+  sh_imu_                      = mrs_lib::SubscribeHandler<sensor_msgs::Imu>(shopts, "imu_in");
+  sh_control_manager_diag_     = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diagnostics_in");
+  sh_safety_area_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::SafetyAreaManagerDiagnostics>(shopts, "safety_area_manager_diagnostics_in");
+  sh_uav_manager_diag_         = mrs_lib::SubscribeHandler<mrs_msgs::UavManagerDiagnostics>(shopts, "uav_manager_diagnostics_in");
+  sh_gazebo_spawner_diag_      = mrs_lib::SubscribeHandler<mrs_msgs::GazeboSpawnerDiagnostics>(shopts, "gazebo_spawner_diagnostics_in",
                                                                                           &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
 
   // | ----------------------- publishers ----------------------- |
@@ -455,15 +458,16 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     return;
   }
 
-  bool got_uav_manager_diag     = sh_uav_manager_diag_.hasMsg();
-  bool got_control_manager_diag = sh_control_manager_diag_.hasMsg();
-  bool got_estimation_diag      = sh_estimation_diag_.hasMsg();
-  bool got_hw_api               = sh_hw_api_status_.hasMsg() && sh_hw_api_capabilities_.hasMsg() && hw_api_connected_;
+  bool got_uav_manager_diag         = sh_uav_manager_diag_.hasMsg();
+  bool got_control_manager_diag     = sh_control_manager_diag_.hasMsg();
+  bool got_safety_area_manager_diag = sh_safety_area_manager_diag_.hasMsg();
+  bool got_estimation_diag          = sh_estimation_diag_.hasMsg();
+  bool got_hw_api                   = sh_hw_api_status_.hasMsg() && sh_hw_api_capabilities_.hasMsg() && hw_api_connected_;
 
-  if (!got_control_manager_diag || !got_hw_api || !got_uav_manager_diag || !got_estimation_diag) {
-    ROS_WARN_THROTTLE(5.0, "[AutomaticStart]: waiting for data: ControlManager=%s, UavManager=%s, HW Api=%s, EstimationManager=%s",
+  if (!got_control_manager_diag || !got_hw_api || !got_uav_manager_diag || !got_estimation_diag || !got_safety_area_manager_diag) {
+    ROS_WARN_THROTTLE(5.0, "[AutomaticStart]: waiting for data: ControlManager=%s, UavManager=%s, HW Api=%s, EstimationManager=%s, SafetyAreaManager=%s",
                       got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api ? "true" : "FALSE",
-                      got_estimation_diag ? "true" : "FALSE");
+                      got_estimation_diag ? "true" : "FALSE", got_safety_area_manager_diag ? "true" : "FALSE");
     return;
   }
 
@@ -516,7 +520,18 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       // | -------------------- preflight checks -------------------- |
 
-      bool position_valid = validateReference();
+      bool position_valid = sh_safety_area_manager_diag_.getMsg()->position_valid_2d; 
+
+      if (position_valid) {
+
+      ROS_INFO_THROTTLE(1.0, "[AutomaticStart]: current position is valid");
+
+      } else {
+
+      ROS_ERROR_THROTTLE(1.0, "[AutomaticStart]: current position is not valid (safety area, bumper)!");
+      }
+
+      /* bool position_valid = validateReference(); */
       bool got_topics     = topicCheck();
 
       bool can_takeoff = got_topics && position_valid;

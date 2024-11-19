@@ -39,6 +39,7 @@
       <remap from="~hw_api_status_in" to="hw_api/status" />
       <remap from="~hw_api_capabilities_in" to="hw_api/capabilities" />
       <remap from="~control_manager_diagnostics_in" to="control_manager/diagnostics" />
+      <remap from="~safety_area_manager_diagnostics_in" to="safety_area_manager/diagnostics" />
       <remap from="~uav_manager_diagnostics_in" to="uav_manager/diagnostics" />
       <remap from="~gazebo_spawner_diagnostics_in" to="/mrs_drone_spawner/diagnostics" />
       <remap from="~estimation_diag_in" to="estimation_manager/diagnostics" />
@@ -52,7 +53,7 @@
       <remap from="~takeoff_out" to="uav_manager/takeoff" />
       <remap from="~toggle_control_output_out" to="control_manager/toggle_output" />
       <remap from="~arm_out" to="hw_api/arming" />
-      <remap from="~validate_reference_out" to="control_manager/validate_reference_2d" />
+      <remap from="~validate_reference_out" to="safety_area_manager/point_in_safety_area_2d" />
 
     </node>
 
