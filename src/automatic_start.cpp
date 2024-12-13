@@ -644,7 +644,7 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     case STATE_FINISHED: {
 
       ROS_INFO_THROTTLE(1.0, "[AutomaticStart]: finished");
-      ros::requestShutdown();
+      /* ros::requestShutdown(); */
       break;
     }
   }
