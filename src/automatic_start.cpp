@@ -645,6 +645,34 @@ void AutomaticStart::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       ROS_INFO_THROTTLE(1.0, "[AutomaticStart]: finished");
       /* ros::requestShutdown(); */
+
+
+      // | -------------------- ready to takeoff -------------------- |
+
+      std_msgs::Bool can_takeoff_msg;
+      can_takeoff_msg.data = false;
+
+      // | -------------------- preflight checks -------------------- |
+
+      bool position_valid = sh_safety_area_manager_diag_.getMsg()->position_valid_2d; 
+
+      if (position_valid) {
+
+      ROS_INFO_THROTTLE(1.0, "[AutomaticStart]: current position is valid");
+
+      } else {
+
+      ROS_ERROR_THROTTLE(1.0, "[AutomaticStart]: current position is not valid (safety area, bumper)!");
+      }
+
+      bool got_topics     = topicCheck();
+
+      bool can_takeoff = got_topics && position_valid;
+
+      // | ---------------------------------------------------------- |
+
+      can_takeoff_msg.data = can_takeoff;
+      ph_can_takeoff_.publish(can_takeoff_msg);
       break;
     }
   }
