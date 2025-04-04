@@ -386,7 +386,7 @@ void AutomaticStart::initialize() {
 
 /* genericCallback() //{ */
 
-void AutomaticStart::genericCallback([[maybe_unused]] std::shared_ptr<rclcpp::SerializedMessage> msg, const std::string topic, const int id) {
+void AutomaticStart::genericCallback([[maybe_unused]] std::shared_ptr<rclcpp::SerializedMessage> msg, [[maybe_unused]] const std::string topic, const int id) {
 
   topic_check_topics_.at(id).updateTime();
 }
