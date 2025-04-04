@@ -55,6 +55,7 @@ def generate_launch_description():
 
     uav_name=os.getenv('UAV_NAME', "uav1")
     run_type=os.getenv('RUN_TYPE', "realworld")
+    use_sim_time=os.getenv('USE_SIM_TIME', "false") == "true"
 
     if run_type == "simulation":
         simulation = True
@@ -93,6 +94,7 @@ def generate_launch_description():
                     {"uav_name": uav_name},
                     {"simulation": simulation},
                     {"enable_profiler": False},
+                    {"use_sim_time": use_sim_time},
                     {'config_private': this_pkg_path + '/config/private/automatic_start.yaml'},
                     {'config_public': this_pkg_path + '/config/public/automatic_start.yaml'},
                     {'custom_config': custom_config},
