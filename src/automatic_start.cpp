@@ -653,8 +653,10 @@ void AutomaticStart::timerMain() {
 
     case STATE_FINISHED: {
 
-      RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "[AutomaticStart]: finished");
-      rclcpp::shutdown();
+      RCLCPP_INFO_ONCE(node_->get_logger(), "[AutomaticStart]: finished");
+
+      timer_main_->stop();
+
       break;
     }
   }
