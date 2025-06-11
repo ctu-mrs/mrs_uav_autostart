@@ -12,3 +12,5 @@ add_subdirectory(./takeoff_should_succeed)
 add_subdirectory(./takeoff_should_fail_while_moving)
 
 add_subdirectory(./takeoff_should_fail_outside_safety_area)
+
+add_subdirectory(./takeoff_trigerred_externally)
