@@ -11,6 +11,6 @@ done
 
 colcon test-result --delete-yes
 
-colcon test --packages-select mrs_uav_autostart --ctest-args -R 'takeoff_trigerred_externally' --event-handlers console_direct+ console_stderr- console_start_end-
+colcon test --packages-select mrs_uav_autostart --ctest-args -R 'takeoff_should_fail_topic' --event-handlers console_direct+ console_stderr- console_start_end-
 
 colcon test-result --all --verbose
