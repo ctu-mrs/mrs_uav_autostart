@@ -119,7 +119,7 @@ if(ENABLE_COVERAGE)
   file(GLOB_RECURSE GCNO_FILES "${CMAKE_BINARY_DIR}/*.gcno")
   install(
     FILES ${GCNO_FILES}
-    DESTINATION lib/${PROJECT_NAME}/coverage
+    DESTINATION lib/${PROJECT_NAME}
     )
 endif()
 
