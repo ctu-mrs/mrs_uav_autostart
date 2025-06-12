@@ -19,16 +19,14 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra)
 endif()
 
-if(MRS_ENABLE_TESTING)
-  message(WARNING "Setting optimizaton levels for tests")
-  add_definitions("-O1")
-  add_definitions("-g")
-endif()
+if(ENABLE_COVERAGE)
+  message(WARNING "building for coverage, the performance might be limited")
 
-if(COVERAGE)
-  message(WARNING "building with --coverage, the performance might be limited")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -fprofile-arcs")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -fprofile-arcs")
+
+  add_definitions("-O1")
+  add_definitions("-g")
 endif()
 
 set(DEPENDENCIES
@@ -79,8 +77,7 @@ target_compile_definitions(MrsUavAutostart_AutomaticStart PRIVATE USE_ROS_TIMER=
 ## |                           testing                          |
 ## --------------------------------------------------------------
 
-# BUILD_TESTING is true by default when building with colcon
-if(BUILD_TESTING)
+if(ENABLE_TESTS)
 
   add_subdirectory(test)
 
@@ -118,7 +115,7 @@ install(
   DESTINATION share/${PROJECT_NAME}
   )
 
-if(COVERAGE)
+if(ENABLE_COVERAGE)
   file(GLOB_RECURSE GCNO_FILES "${CMAKE_BINARY_DIR}/*.gcno")
   install(
     FILES ${GCNO_FILES}
