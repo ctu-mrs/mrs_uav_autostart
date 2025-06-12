@@ -118,6 +118,14 @@ install(
   DESTINATION share/${PROJECT_NAME}
   )
 
+if(COVERAGE)
+  file(GLOB_RECURSE GCNO_FILES "${CMAKE_BINARY_DIR}/*.gcno")
+  install(
+    FILES ${GCNO_FILES}
+    DESTINATION lib/${PROJECT_NAME}/coverage
+    )
+endif()
+
 ament_export_targets(
   export_${PROJECT_NAME} HAS_LIBRARY_TARGET
   )
