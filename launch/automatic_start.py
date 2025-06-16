@@ -26,6 +26,18 @@ def generate_launch_description():
     this_pkg_path = get_package_share_directory(pkg_name)
     namespace='automatic_start'
 
+    # #{ uav_name
+
+    uav_name = LaunchConfiguration('uav_name')
+
+    ld.add_action(DeclareLaunchArgument(
+        'uav_name',
+        default_value=os.getenv('UAV_NAME', "uav1"),
+        description="The uav name used for namespacing.",
+    ))
+
+    # #} end of custom_config
+
     # #{ custom_config
 
     custom_config = LaunchConfiguration('custom_config')
@@ -53,7 +65,6 @@ def generate_launch_description():
 
     # #{ env-based params
 
-    uav_name=os.getenv('UAV_NAME', "uav1")
     run_type=os.getenv('RUN_TYPE', "realworld")
     use_sim_time=os.getenv('USE_SIM_TIME', "false") == "true"
 
