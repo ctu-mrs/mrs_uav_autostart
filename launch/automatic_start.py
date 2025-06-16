@@ -66,7 +66,6 @@ def generate_launch_description():
     # #{ env-based params
 
     run_type=os.getenv('RUN_TYPE', "realworld")
-    use_sim_time=os.getenv('USE_SIM_TIME', "false") == "true"
 
     if run_type == "simulation":
         simulation = True
@@ -80,6 +79,18 @@ def generate_launch_description():
     ld.add_action(DeclareLaunchArgument(name='log_level', default_value='info'))
 
     # #} end of log_level
+
+    # #{ use_sim_time
+
+    use_sim_time = LaunchConfiguration('use_sim_time')
+
+    ld.add_action(DeclareLaunchArgument(
+        'use_sim_time',
+        default_value=os.getenv('USE_SIM_TIME', "false"),
+        description="Should the node subscribe to sim time?",
+    ))
+
+    # #} end of custom_config
 
     ld.add_action(ComposableNodeContainer(
 
