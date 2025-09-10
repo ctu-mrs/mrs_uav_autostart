@@ -93,10 +93,6 @@ public:
 private:
   rclcpp::Clock::SharedPtr clock_;
 
-  rclcpp::CallbackGroup::SharedPtr cbkgrp_subs_;
-  rclcpp::CallbackGroup::SharedPtr cbkgrp_ss_;
-  rclcpp::CallbackGroup::SharedPtr cbkgrp_sc_;
-
   void initialize();
 
   std::atomic<bool> is_initialized_ = false;
@@ -226,21 +222,13 @@ private:
 
 /* AutomaticStart::AutomaticStart() //{ */
 
-AutomaticStart::AutomaticStart(rclcpp::NodeOptions options)
-    : Node("automatic_start", options)
-    , clock_(this_node().get_clock())
-    , cbkgrp_subs_(this_node().create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive))
-    , cbkgrp_ss_(this_node().create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive))
-    , cbkgrp_sc_(this_node().create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive))
-{
-    this->initialize();
+AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_start", options), clock_(this_node().get_clock()) {
+  this->initialize();
 }
 
 //}
 
-//
-
-/* onInit() //{ */
+/* initialize() //{ */
 
 void AutomaticStart::initialize() {
 
@@ -304,14 +292,16 @@ void AutomaticStart::initialize() {
   shopts.threadsafe         = true;
   shopts.autostart          = true;
 
-  sh_estimation_diag_      = mrs_lib::SubscriberHandler<mrs_msgs::msg::EstimationDiagnostics>(shopts, "~/estimation_diag_in");
-  sh_hw_api_status_        = mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>(shopts, "~/hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
-  sh_hw_api_capabilities_  = mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiCapabilities>(shopts, "~/hw_api_capabilities_in", &AutomaticStart::callbackHwApiCapabilities, this);
+  sh_estimation_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::EstimationDiagnostics>(shopts, "~/estimation_diag_in");
+  sh_hw_api_status_   = mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>(shopts, "~/hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
+  sh_hw_api_capabilities_ =
+      mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiCapabilities>(shopts, "~/hw_api_capabilities_in", &AutomaticStart::callbackHwApiCapabilities, this);
   sh_distance_sensor_      = mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>(shopts, "~/distance_sensor_in");
   sh_imu_                  = mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>(shopts, "~/imu_in");
   sh_control_manager_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>(shopts, "~/control_manager_diagnostics_in");
   sh_uav_manager_diag_     = mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>(shopts, "~/uav_manager_diagnostics_in");
-  sh_gazebo_spawner_diag_  = mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>(shopts, "~/gazebo_spawner_diagnostics_in", &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
+  sh_gazebo_spawner_diag_  = mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>(shopts, "~/gazebo_spawner_diagnostics_in",
+                                                                                                 &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
 
   // | ----------------------- publishers ----------------------- |
 
@@ -319,7 +309,7 @@ void AutomaticStart::initialize() {
 
   // | --------------------- service clients -------------------- |
 
-  rclcpp::Node::SharedPtr node = this_node_ptr();
+  rclcpp::Node::SharedPtr node          = this_node_ptr();
   service_client_takeoff_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node, "~/takeoff_out");
   service_client_toggle_control_output_ = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node, "~/toggle_control_output_out");
   service_client_arm_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node, "~/arm_out");
@@ -346,7 +336,8 @@ void AutomaticStart::initialize() {
 
       int id = i;  // id to identify which topic called the generic callback
 
-      std::function<void(std::shared_ptr<rclcpp::SerializedMessage> msg)> callback_fcn = std::bind(&AutomaticStart::genericCallback, this, std::placeholders::_1, topic_name, id);
+      std::function<void(std::shared_ptr<rclcpp::SerializedMessage> msg)> callback_fcn =
+          std::bind(&AutomaticStart::genericCallback, this, std::placeholders::_1, topic_name, id);
 
       auto tmp_subscriber = this_node().create_generic_subscription(topic_name, topic_type, rclcpp::SystemDefaultsQoS(), callback_fcn);
 
@@ -500,7 +491,11 @@ void AutomaticStart::timerMain() {
   bool got_hw_api               = sh_hw_api_status_.hasMsg() && sh_hw_api_capabilities_.hasMsg() && hw_api_connected_;
 
   if (!got_control_manager_diag || !got_hw_api || !got_uav_manager_diag || !got_estimation_diag) {
-    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 5000, "[AutomaticStart]: waiting for data: ControlManager=%s, UavManager=%s, HW Api=%s, EstimationManager=%s", got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api ? "true" : "FALSE", got_estimation_diag ? "true" : "FALSE");
+    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 5000,
+                         "[AutomaticStart]: waiting for data: ControlManager=%s, UavManager=%s, HW "
+                         "Api=%s, EstimationManager=%s",
+                         got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api ? "true" : "FALSE",
+                         got_estimation_diag ? "true" : "FALSE");
     return;
   }
 
@@ -525,7 +520,9 @@ void AutomaticStart::timerMain() {
 
         if (armed) {
 
-          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: -- the UAV is also armed!! finishing to prevent unwanted system activation");
+          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000,
+                               "[AutomaticStart]: -- the UAV is also armed!! finishing to prevent "
+                               "unwanted system activation");
 
           if (we_toggled_output_) {
 
@@ -580,7 +577,8 @@ void AutomaticStart::timerMain() {
 
         if (armed_time.seconds() > 0 && time_from_arming > _control_output_timeout_) {
 
-          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: could not set control output ON for %.2f secs, disarming", _control_output_timeout_);
+          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: could not set control output ON for %.2f secs, disarming",
+                               _control_output_timeout_);
           disarm();
           changeState(STATE_FINISHED);
         }
@@ -668,7 +666,8 @@ void AutomaticStart::timerMain() {
 
 void AutomaticStart::changeState(LandingStates_t new_state) {
 
-  RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: switching states %s -> %s", state_names[current_state], state_names[new_state]);
+  RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: switching states %s -> %s", state_names[current_state],
+                       state_names[new_state]);
 
   switch (new_state) {
 
@@ -792,7 +791,8 @@ bool AutomaticStart::toggleControlOutput(const bool& value) {
 
     } else {
 
-      RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: setting of control output failed: %s", response.value()->message.c_str());
+      RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: setting of control output failed: %s",
+                            response.value()->message.c_str());
     }
 
   } else {
@@ -926,7 +926,8 @@ bool AutomaticStart::preflightCheckSpeed(void) {
 
   if (speed > _speed_check_max_speed_) {
     speed_check_violated_time_ = clock_->now();
-    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: the estimated speed (%.2f ms^-2) is over the limit (%.2f ms^-2)", speed, _speed_check_max_speed_);
+    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: the estimated speed (%.2f ms^-2) is over the limit (%.2f ms^-2)", speed,
+                         _speed_check_max_speed_);
   }
 
   if (speed_check_violated_time_.seconds() > 0 && (clock_->now() - speed_check_violated_time_).seconds() < _preflight_check_time_window_) {
@@ -968,7 +969,8 @@ bool AutomaticStart::preflighCheckHeight(void) {
 
   if (height > _height_check_max_height_) {
     height_check_violated_time_ = clock_->now();
-    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: the height (%.2f m) is over the limit (%.2f m)", height, _height_check_max_height_);
+    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: the height (%.2f m) is over the limit (%.2f m)", height,
+                         _height_check_max_height_);
   }
 
   if (height_check_violated_time_.seconds() > 0 && (clock_->now() - height_check_violated_time_).seconds() < _preflight_check_time_window_) {
@@ -1010,7 +1012,10 @@ bool AutomaticStart::preflighCheckGyro(void) {
 
   if (abs(gyros.x) > _gyro_check_max_rate_ || abs(gyros.y) > _gyro_check_max_rate_ || abs(gyros.z) > _gyro_check_max_rate_) {
     gyro_check_violated_time_ = clock_->now();
-    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: the angular velocity ([%.2f, %.2f, %.2f] rad/s) is over the limit (%.2f rad/s)", gyros.x, gyros.y, gyros.z, _gyro_check_max_rate_);
+    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000,
+                         "[AutomaticStart]: the angular velocity ([%.2f, %.2f, %.2f] rad/s) is "
+                         "over the limit (%.2f rad/s)",
+                         gyros.x, gyros.y, gyros.z, _gyro_check_max_rate_);
   }
 
   if (gyro_check_violated_time_.seconds() > 0 && (clock_->now() - gyro_check_violated_time_).seconds() < _preflight_check_time_window_) {
