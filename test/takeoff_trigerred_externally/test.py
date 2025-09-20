@@ -47,7 +47,7 @@ def generate_test_description():
                     PathJoinSubstitution([
                         FindPackageShare('mrs_uav_testing'),
                         'launch',
-                        'mrs_uav_system.launch.launch.py'
+                        'mrs_uav_system.launch.py'
                         ])
                     ]),
                     launch_arguments={
