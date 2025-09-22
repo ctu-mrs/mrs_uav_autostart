@@ -93,6 +93,9 @@ public:
 private:
   rclcpp::Clock::SharedPtr clock_;
 
+  rclcpp::CallbackGroup::SharedPtr cbkgrp_subs_;
+  rclcpp::CallbackGroup::SharedPtr cbkgrp_sc_;
+
   void initialize();
 
   std::atomic<bool> is_initialized_ = false;
@@ -232,6 +235,9 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
 void AutomaticStart::initialize() {
 
+  cbkgrp_subs_ = this_node().create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  cbkgrp_sc_   = this_node().create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
   armed_      = false;
   armed_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
 
@@ -287,10 +293,11 @@ void AutomaticStart::initialize() {
   // | ----------------------- subscribers ---------------------- |
 
   mrs_lib::SubscriberHandlerOptions shopts;
-  shopts.node               = this_node_ptr();
-  shopts.no_message_timeout = mrs_lib::no_timeout;
-  shopts.threadsafe         = true;
-  shopts.autostart          = true;
+  shopts.node                                = this_node_ptr();
+  shopts.no_message_timeout                  = mrs_lib::no_timeout;
+  shopts.threadsafe                          = true;
+  shopts.autostart                           = true;
+  shopts.subscription_options.callback_group = cbkgrp_subs_;
 
   sh_estimation_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::EstimationDiagnostics>(shopts, "~/estimation_diag_in");
   sh_hw_api_status_   = mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>(shopts, "~/hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
@@ -309,12 +316,12 @@ void AutomaticStart::initialize() {
 
   // | --------------------- service clients -------------------- |
 
-  rclcpp::Node::SharedPtr node          = this_node_ptr();
-  service_client_takeoff_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node, "~/takeoff_out");
-  service_client_toggle_control_output_ = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node, "~/toggle_control_output_out");
-  service_client_arm_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node, "~/arm_out");
+  rclcpp::Node::SharedPtr node = this_node_ptr();
 
-  service_client_validate_reference_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReference>(node, "~/validate_reference_out");
+  service_client_takeoff_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node, "~/takeoff_out", cbkgrp_sc_);
+  service_client_toggle_control_output_ = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node, "~/toggle_control_output_out", cbkgrp_sc_);
+  service_client_arm_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node, "~/arm_out", cbkgrp_sc_);
+  service_client_validate_reference_    = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReference>(node, "~/validate_reference_out", cbkgrp_sc_);
 
   // | ------------------ setup generic topics ------------------ |
 
