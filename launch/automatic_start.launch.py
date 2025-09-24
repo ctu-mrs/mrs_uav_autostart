@@ -127,6 +127,7 @@ def generate_launch_description():
                     ("~/hw_api_status_in", "hw_api/status"),
                     ("~/hw_api_capabilities_in", "hw_api/capabilities"),
                     ("~/control_manager_diagnostics_in", "control_manager/diagnostics"),
+                    ("~/safety_area_manager_diagnostics_in", "safety_area_manager/diagnostics"),
                     ("~/uav_manager_diagnostics_in", "uav_manager/diagnostics"),
                     ("~/gazebo_spawner_diagnostics_in", "/mrs_drone_spawner/diagnostics"),
                     ("~/estimation_diag_in", "estimation_manager/diagnostics"),

@@ -16,6 +16,7 @@
 #include <std_srvs/srv/set_bool.hpp>
 
 #include <mrs_msgs/msg/control_manager_diagnostics.hpp>
+#include <mrs_msgs/msg/safety_area_manager_diagnostics.hpp>
 #include <mrs_msgs/msg/uav_manager_diagnostics.hpp>
 #include <mrs_msgs/srv/validate_reference.hpp>
 #include <mrs_msgs/msg/gazebo_spawner_diagnostics.hpp>
@@ -112,14 +113,15 @@ private:
 
   // | ----------------------- subscribers ---------------------- |
 
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::EstimationDiagnostics>     sh_estimation_diag_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>               sh_hw_api_status_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiCapabilities>         sh_hw_api_capabilities_;
-  mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>                  sh_distance_sensor_;
-  mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>                    sh_imu_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics> sh_control_manager_diag_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>     sh_uav_manager_diag_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>  sh_gazebo_spawner_diag_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::EstimationDiagnostics>        sh_estimation_diag_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>                  sh_hw_api_status_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiCapabilities>            sh_hw_api_capabilities_;
+  mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>                     sh_distance_sensor_;
+  mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>                       sh_imu_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>    sh_control_manager_diag_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics> sh_safety_area_manager_diag_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>        sh_uav_manager_diag_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>     sh_gazebo_spawner_diag_;
 
   // | ----------------------- publishers ----------------------- |
 
@@ -159,8 +161,6 @@ private:
   // | ------------------------ routines ------------------------ |
 
   bool takeoff();
-
-  bool validateReference();
 
   bool toggleControlOutput(const bool& value);
   bool disarm();
@@ -306,6 +306,8 @@ void AutomaticStart::initialize() {
   sh_distance_sensor_      = mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>(shopts, "~/distance_sensor_in");
   sh_imu_                  = mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>(shopts, "~/imu_in");
   sh_control_manager_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>(shopts, "~/control_manager_diagnostics_in");
+  sh_safety_area_manager_diag_ =
+      mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics>(shopts, "~/safety_area_manager_diagnostics_in");
   sh_uav_manager_diag_     = mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>(shopts, "~/uav_manager_diagnostics_in");
   sh_gazebo_spawner_diag_  = mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>(shopts, "~/gazebo_spawner_diagnostics_in",
                                                                                                  &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
@@ -492,17 +494,18 @@ void AutomaticStart::timerMain() {
     return;
   }
 
-  bool got_uav_manager_diag     = sh_uav_manager_diag_.hasMsg();
-  bool got_control_manager_diag = sh_control_manager_diag_.hasMsg();
-  bool got_estimation_diag      = sh_estimation_diag_.hasMsg();
-  bool got_hw_api               = sh_hw_api_status_.hasMsg() && sh_hw_api_capabilities_.hasMsg() && hw_api_connected_;
+  bool got_uav_manager_diag         = sh_uav_manager_diag_.hasMsg();
+  bool got_control_manager_diag     = sh_control_manager_diag_.hasMsg();
+  bool got_safety_area_manager_diag = sh_safety_area_manager_diag_.hasMsg();
+  bool got_estimation_diag          = sh_estimation_diag_.hasMsg();
+  bool got_hw_api                   = sh_hw_api_status_.hasMsg() && sh_hw_api_capabilities_.hasMsg() && hw_api_connected_;
 
-  if (!got_control_manager_diag || !got_hw_api || !got_uav_manager_diag || !got_estimation_diag) {
+  if (!got_control_manager_diag || !got_hw_api || !got_uav_manager_diag || !got_estimation_diag || !got_safety_area_manager_diag) {
     RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 5000,
                          "[AutomaticStart]: waiting for data: ControlManager=%s, UavManager=%s, HW "
-                         "Api=%s, EstimationManager=%s",
+                         "Api=%s, EstimationManager=%s SafetyAreaManager=%s",
                          got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api ? "true" : "FALSE",
-                         got_estimation_diag ? "true" : "FALSE");
+                         got_estimation_diag ? "true" : "FALSE", got_safety_area_manager_diag ? "true" : "FALSE");
     return;
   }
 
@@ -557,7 +560,7 @@ void AutomaticStart::timerMain() {
 
       // | -------------------- preflight checks -------------------- |
 
-      bool position_valid = validateReference();
+      bool position_valid = sh_safety_area_manager_diag_.getMsg()->position_valid_2d; 
       bool got_topics     = topicCheck();
 
       bool can_takeoff = got_topics && position_valid;
@@ -745,36 +748,6 @@ bool AutomaticStart::takeoff() {
 }
 
 //}
-
-/* validateReference() //{ */
-
-bool AutomaticStart::validateReference() {
-
-  std::shared_ptr<mrs_msgs::srv::ValidateReference::Request> request = std::make_shared<mrs_msgs::srv::ValidateReference::Request>();
-
-  request->reference.header.frame_id = _body_frame_name_;
-
-  auto response = service_client_validate_reference_.callSync(request);
-
-  if (response) {
-
-    if (response.value()->success) {
-
-      RCLCPP_INFO_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: current position is valid");
-      return true;
-
-    } else {
-
-      RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: current position is not valid (safety area, bumper)!");
-      return false;
-    }
-
-  } else {
-
-    RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "[AutomaticStart]: current position could not be validated");
-    return false;
-  }
-}
 
 //}
 
