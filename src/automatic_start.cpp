@@ -91,6 +91,7 @@ public:
   AutomaticStart(rclcpp::NodeOptions options);
 
 private:
+  rclcpp::Node::SharedPtr  node_;
   rclcpp::Clock::SharedPtr clock_;
 
   rclcpp::CallbackGroup::SharedPtr cbkgrp_subs_;
@@ -223,9 +224,9 @@ private:
 
 //}
 
-/* AutomaticStart::AutomaticStart() //{ */
+/* AutomaticStart() //{ */
 
-AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_start", options), clock_(this_node().get_clock()) {
+AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_start", options) {
   this->initialize();
 }
 
@@ -234,6 +235,9 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 /* initialize() //{ */
 
 void AutomaticStart::initialize() {
+
+  node_  = this_node_ptr();
+  clock_ = node_->get_clock();
 
   cbkgrp_subs_ = this_node().create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   cbkgrp_sc_   = this_node().create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
