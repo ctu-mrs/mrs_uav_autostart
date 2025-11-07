@@ -83,7 +83,7 @@ typedef enum
   STATE_FINISHED
 } LandingStates_t;
 
-const char* state_names[3] = {"IDLING", "TAKEOFF", "FINISHED"};
+const char *state_names[3] = {"IDLING", "TAKEOFF", "FINISHED"};
 
 class AutomaticStart : public mrs_lib::Node {
 
@@ -163,7 +163,7 @@ private:
 
   bool validateReference();
 
-  bool toggleControlOutput(const bool& value);
+  bool toggleControlOutput(const bool &value);
   bool disarm();
 
   bool isGazeboSimulation(void);
@@ -345,7 +345,7 @@ void AutomaticStart::initialize() {
       Topic tmp_topic(this_node_ptr(), topic_name);
       topic_check_topics_.push_back(tmp_topic);
 
-      int id = i;  // id to identify which topic called the generic callback
+      int id = i; // id to identify which topic called the generic callback
 
       std::function<void(std::shared_ptr<rclcpp::SerializedMessage> msg)> callback_fcn =
           std::bind(&AutomaticStart::genericCallback, this, std::placeholders::_1, topic_name, id);
@@ -515,154 +515,154 @@ void AutomaticStart::timerMain() {
 
   switch (current_state) {
 
-    case STATE_IDLE: {
+  case STATE_IDLE: {
 
-      // | --------------------- preflight check -------------------- |
+    // | --------------------- preflight check -------------------- |
 
-      bool speed_valid  = preflightCheckSpeed();
-      bool height_valid = preflighCheckHeight();
-      bool gyros_valid  = preflighCheckGyro();
+    bool speed_valid  = preflightCheckSpeed();
+    bool height_valid = preflighCheckHeight();
+    bool gyros_valid  = preflighCheckGyro();
 
-      bool possibly_in_the_air = !speed_valid || !height_valid || !gyros_valid;
+    bool possibly_in_the_air = !speed_valid || !height_valid || !gyros_valid;
 
-      if (!offboard && possibly_in_the_air) {
+    if (!offboard && possibly_in_the_air) {
 
-        RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "preflight check failed, the UAV is possibly in the air");
+      RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "preflight check failed, the UAV is possibly in the air");
 
-        if (armed) {
+      if (armed) {
 
-          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000,
-                               "-- the UAV is also armed!! finishing to prevent "
-                               "unwanted system activation");
+        RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000,
+                             "-- the UAV is also armed!! finishing to prevent "
+                             "unwanted system activation");
 
-          if (we_toggled_output_) {
+        if (we_toggled_output_) {
 
-            bool res = toggleControlOutput(false);
+          bool res = toggleControlOutput(false);
 
-            if (!res) {
-              RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "could not set control output OFF");
-            }
+          if (!res) {
+            RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "could not set control output OFF");
           }
-
-          changeState(STATE_FINISHED);
-
-          return;
         }
+
+        changeState(STATE_FINISHED);
 
         return;
       }
 
-      // | -------------------- ready to takeoff -------------------- |
-
-      bool control_output_enabled = sh_control_manager_diag_.getMsg()->output_enabled;
-
-      std_msgs::msg::Bool can_takeoff_msg;
-      can_takeoff_msg.data = false;
-
-      // | -------------------- preflight checks -------------------- |
-
-      bool position_valid = validateReference();
-      bool got_topics     = topicCheck();
-
-      bool can_takeoff = got_topics && position_valid;
-
-      // | ---------------------------------------------------------- |
-
-      can_takeoff_msg.data = can_takeoff;
-      ph_can_takeoff_.publish(can_takeoff_msg);
-
-      if (armed && !control_output_enabled) {
-
-        if (can_takeoff) {
-
-          bool res = toggleControlOutput(true);
-
-          if (!res) {
-            RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "could not set control output ON");
-          } else {
-            we_toggled_output_ = true;
-          }
-        }
-
-        double time_from_arming = (clock_->now() - armed_time).seconds();
-
-        if (armed_time.seconds() > 0 && time_from_arming > _control_output_timeout_) {
-
-          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _control_output_timeout_);
-          disarm();
-          changeState(STATE_FINISHED);
-        }
-      }
-
-      if (_simulation_ && isGazeboSimulation()) {
-
-        std::scoped_lock lock(mutex_gazebo_spawner_diagnostics_);
-
-        if (got_gazebo_spawner_diagnostics) {
-
-          if (!gazebo_spawner_diagnostics_.spawn_called || gazebo_spawner_diagnostics_.processing) {
-            RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "(simulation) waiting for spawner to finish spawning UAVs");
-            return;
-          }
-
-        } else {
-
-          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "(simulation) missing spawner diagnostics");
-          return;
-        }
-      }
-
-      // when armed and in offboard, takeoff
-      if (armed && offboard && control_output_enabled) {
-
-        if (!_handle_takeoff_) {
-          changeState(STATE_FINISHED);
-        } else {
-
-          rclcpp::Duration armed_time_diff    = clock_->now() - armed_time;
-          rclcpp::Duration offboard_time_diff = clock_->now() - offboard_time;
-
-          if (armed_time_diff.seconds() > _safety_timeout_ && offboard_time_diff.seconds() > _safety_timeout_) {
-
-            changeState(STATE_TAKEOFF);
-
-          } else {
-
-            double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff.seconds() : offboard_time_diff.seconds();
-
-            RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "taking off in %.0f", (_safety_timeout_ - min));
-          }
-        }
-      }
-
-      break;
+      return;
     }
 
-    case STATE_TAKEOFF: {
+    // | -------------------- ready to takeoff -------------------- |
 
-      // if takeoff finished
-      if (control_manager_diagnostics->flying_normally) {
+    bool control_output_enabled = sh_control_manager_diag_.getMsg()->output_enabled;
 
-        RCLCPP_INFO_THROTTLE(this_node().get_logger(), *clock_, 1000, "takeoff finished");
+    std_msgs::msg::Bool can_takeoff_msg;
+    can_takeoff_msg.data = false;
 
+    // | -------------------- preflight checks -------------------- |
+
+    bool position_valid = validateReference();
+    bool got_topics     = topicCheck();
+
+    bool can_takeoff = got_topics && position_valid;
+
+    // | ---------------------------------------------------------- |
+
+    can_takeoff_msg.data = can_takeoff;
+    ph_can_takeoff_.publish(can_takeoff_msg);
+
+    if (armed && !control_output_enabled) {
+
+      if (can_takeoff) {
+
+        bool res = toggleControlOutput(true);
+
+        if (!res) {
+          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "could not set control output ON");
+        } else {
+          we_toggled_output_ = true;
+        }
+      }
+
+      double time_from_arming = (clock_->now() - armed_time).seconds();
+
+      if (armed_time.seconds() > 0 && time_from_arming > _control_output_timeout_) {
+
+        RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _control_output_timeout_);
+        disarm();
         changeState(STATE_FINISHED);
+      }
+    }
+
+    if (_simulation_ && isGazeboSimulation()) {
+
+      std::scoped_lock lock(mutex_gazebo_spawner_diagnostics_);
+
+      if (got_gazebo_spawner_diagnostics) {
+
+        if (!gazebo_spawner_diagnostics_.spawn_called || gazebo_spawner_diagnostics_.processing) {
+          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "(simulation) waiting for spawner to finish spawning UAVs");
+          return;
+        }
 
       } else {
 
-        RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "waiting for the takeoff to finish");
+        RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "(simulation) missing spawner diagnostics");
+        return;
       }
-
-      break;
     }
 
-    case STATE_FINISHED: {
+    // when armed and in offboard, takeoff
+    if (armed && offboard && control_output_enabled) {
 
-      RCLCPP_INFO_ONCE(this_node().get_logger(), "finished");
+      if (!_handle_takeoff_) {
+        changeState(STATE_FINISHED);
+      } else {
 
-      timer_main_->stop();
+        rclcpp::Duration armed_time_diff    = clock_->now() - armed_time;
+        rclcpp::Duration offboard_time_diff = clock_->now() - offboard_time;
 
-      break;
+        if (armed_time_diff.seconds() > _safety_timeout_ && offboard_time_diff.seconds() > _safety_timeout_) {
+
+          changeState(STATE_TAKEOFF);
+
+        } else {
+
+          double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff.seconds() : offboard_time_diff.seconds();
+
+          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "taking off in %.0f", (_safety_timeout_ - min));
+        }
+      }
     }
+
+    break;
+  }
+
+  case STATE_TAKEOFF: {
+
+    // if takeoff finished
+    if (control_manager_diagnostics->flying_normally) {
+
+      RCLCPP_INFO_THROTTLE(this_node().get_logger(), *clock_, 1000, "takeoff finished");
+
+      changeState(STATE_FINISHED);
+
+    } else {
+
+      RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "waiting for the takeoff to finish");
+    }
+
+    break;
+  }
+
+  case STATE_FINISHED: {
+
+    RCLCPP_INFO_ONCE(this_node().get_logger(), "finished");
+
+    timer_main_->stop();
+
+    break;
+  }
   }
 }
 
@@ -680,36 +680,36 @@ void AutomaticStart::changeState(LandingStates_t new_state) {
 
   switch (new_state) {
 
-    case STATE_IDLE: {
+  case STATE_IDLE: {
 
-      break;
+    break;
+  }
+
+  case STATE_TAKEOFF: {
+
+    if (_pre_takeoff_sleep_ > 1.0) {
+      RCLCPP_INFO(this_node().get_logger(), "sleeping for %.2f secs before takeoff", _pre_takeoff_sleep_);
+      clock_->sleep_for(std::chrono::duration<double>(_pre_takeoff_sleep_));
     }
 
-    case STATE_TAKEOFF: {
+    bool res = takeoff();
 
-      if (_pre_takeoff_sleep_ > 1.0) {
-        RCLCPP_INFO(this_node().get_logger(), "sleeping for %.2f secs before takeoff", _pre_takeoff_sleep_);
-        clock_->sleep_for(std::chrono::duration<double>(_pre_takeoff_sleep_));
-      }
+    if (!res) {
 
-      bool res = takeoff();
+      current_state = STATE_FINISHED;
 
-      if (!res) {
-
-        current_state = STATE_FINISHED;
-
-        return;
-      }
-
-      break;
-    }
-
-    case STATE_FINISHED: {
-
-      break;
+      return;
     }
 
     break;
+  }
+
+  case STATE_FINISHED: {
+
+    break;
+  }
+
+  break;
   }
 
   current_state = new_state;
@@ -782,7 +782,7 @@ bool AutomaticStart::validateReference() {
 
 /* toggleControlOutput() //{ */
 
-bool AutomaticStart::toggleControlOutput(const bool& value) {
+bool AutomaticStart::toggleControlOutput(const bool &value) {
 
   RCLCPP_INFO_THROTTLE(this_node().get_logger(), *clock_, 1000, "setting control output %s", value ? "ON" : "OFF");
 
@@ -872,7 +872,7 @@ bool AutomaticStart::isGazeboSimulation(void) {
 
   auto node_names = this_node().get_node_names();
 
-  for (auto& node : node_names) {
+  for (auto &node : node_names) {
     if (node.find("mrs_drone_spawner") != std::string::npos) {
       RCLCPP_INFO(this_node().get_logger(), "MRS Gazebo Simulation detected");
       is_gazebo_simulation_ = true;
@@ -1034,9 +1034,9 @@ bool AutomaticStart::preflighCheckGyro(void) {
 
 //}
 
-}  // namespace automatic_start
+} // namespace automatic_start
 
-}  // namespace mrs_uav_autostart
+} // namespace mrs_uav_autostart
 
 #include <rclcpp_components/register_node_macro.hpp>
 RCLCPP_COMPONENTS_REGISTER_NODE(mrs_uav_autostart::automatic_start::AutomaticStart)
