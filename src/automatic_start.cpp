@@ -163,7 +163,7 @@ private:
 
   bool takeoff();
 
-  bool toggleControlOutput(const bool& value);
+  bool toggleControlOutput(const bool &value);
   bool disarm();
 
   bool isGazeboSimulation(void);
@@ -307,14 +307,13 @@ void AutomaticStart::initialize() {
   sh_hw_api_status_   = mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>(shopts, "~/hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
   sh_hw_api_capabilities_ =
       mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiCapabilities>(shopts, "~/hw_api_capabilities_in", &AutomaticStart::callbackHwApiCapabilities, this);
-  sh_distance_sensor_      = mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>(shopts, "~/distance_sensor_in");
-  sh_imu_                  = mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>(shopts, "~/imu_in");
-  sh_control_manager_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>(shopts, "~/control_manager_diagnostics_in");
-  sh_safety_area_manager_diag_ =
-      mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics>(shopts, "~/safety_area_manager_diagnostics_in");
-  sh_uav_manager_diag_     = mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>(shopts, "~/uav_manager_diagnostics_in");
-  sh_gazebo_spawner_diag_  = mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>(shopts, "~/gazebo_spawner_diagnostics_in",
-                                                                                                 &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
+  sh_distance_sensor_          = mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>(shopts, "~/distance_sensor_in");
+  sh_imu_                      = mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>(shopts, "~/imu_in");
+  sh_control_manager_diag_     = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>(shopts, "~/control_manager_diagnostics_in");
+  sh_safety_area_manager_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics>(shopts, "~/safety_area_manager_diagnostics_in");
+  sh_uav_manager_diag_         = mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>(shopts, "~/uav_manager_diagnostics_in");
+  sh_gazebo_spawner_diag_      = mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>(shopts, "~/gazebo_spawner_diagnostics_in",
+                                                                                                     &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
 
   // | ----------------------- publishers ----------------------- |
 
@@ -507,7 +506,7 @@ void AutomaticStart::timerMain() {
   if (!got_control_manager_diag || !got_hw_api || !got_uav_manager_diag || !got_estimation_diag || !got_safety_area_manager_diag) {
     RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 5000,
                          "waiting for data: ControlManager=%s, UavManager=%s, HW "
-                         "Api=%s, EstimationManager=%s , SafetyAreaManager=%s", 
+                         "Api=%s, EstimationManager=%s , SafetyAreaManager=%s",
                          got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api ? "true" : "FALSE",
                          got_estimation_diag ? "true" : "FALSE", got_safety_area_manager_diag ? "true" : "FALSE");
     return;
@@ -561,7 +560,7 @@ void AutomaticStart::timerMain() {
 
       // | -------------------- preflight checks -------------------- |
 
-      bool position_valid = sh_safety_area_manager_diag_.getMsg()->position_valid_2d; 
+      bool position_valid = sh_safety_area_manager_diag_.getMsg()->position_valid_2d;
       bool got_topics     = topicCheck();
 
       bool can_takeoff = got_topics && position_valid;
