@@ -20,4 +20,4 @@ concurrency:
 jobs:
 
   build:
-    uses: ctu-mrs/ci_scripts/.github/workflows/ros_build_test.yml@pr_fix
+    uses: ctu-mrs/ci_scripts/.github/workflows/ros_build_test.yml@ros2
