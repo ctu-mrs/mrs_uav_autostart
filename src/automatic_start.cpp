@@ -18,7 +18,6 @@
 #include <mrs_msgs/msg/control_manager_diagnostics.hpp>
 #include <mrs_msgs/msg/safety_area_manager_diagnostics.hpp>
 #include <mrs_msgs/msg/uav_manager_diagnostics.hpp>
-#include <mrs_msgs/srv/validate_reference.hpp>
 #include <mrs_msgs/msg/gazebo_spawner_diagnostics.hpp>
 #include <mrs_msgs/msg/hw_api_status.hpp>
 #include <mrs_msgs/msg/hw_api_capabilities.hpp>
@@ -110,7 +109,6 @@ private:
   mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>           service_client_toggle_control_output_;
   mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>           service_client_arm_;
   mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>           service_client_takeoff_;
-  mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReference> service_client_validate_reference_;
 
   // | ----------------------- subscribers ---------------------- |
 
@@ -326,7 +324,6 @@ void AutomaticStart::initialize() {
   service_client_takeoff_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node, "~/takeoff_out", cbkgrp_sc_);
   service_client_toggle_control_output_ = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node, "~/toggle_control_output_out", cbkgrp_sc_);
   service_client_arm_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node, "~/arm_out", cbkgrp_sc_);
-  service_client_validate_reference_    = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReference>(node, "~/validate_reference_out", cbkgrp_sc_);
 
   // | ------------------ setup generic topics ------------------ |
 
@@ -551,90 +548,7 @@ void AutomaticStart::timerMain() {
         return;
       }
 
-      // | -------------------- ready to takeoff -------------------- |
-
-      bool control_output_enabled = sh_control_manager_diag_.getMsg()->output_enabled;
-
-      std_msgs::msg::Bool can_takeoff_msg;
-      can_takeoff_msg.data = false;
-
-      // | -------------------- preflight checks -------------------- |
-
-      bool position_valid = sh_safety_area_manager_diag_.getMsg()->position_valid_2d;
-      bool got_topics     = topicCheck();
-
-      bool can_takeoff = got_topics && position_valid;
-
-      // | ---------------------------------------------------------- |
-
-      can_takeoff_msg.data = can_takeoff;
-      ph_can_takeoff_.publish(can_takeoff_msg);
-
-      if (armed && !control_output_enabled) {
-
-        if (can_takeoff) {
-
-          bool res = toggleControlOutput(true);
-
-          if (!res) {
-            RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "could not set control output ON");
-          } else {
-            we_toggled_output_ = true;
-          }
-        }
-
-        double time_from_arming = (clock_->now() - armed_time).seconds();
-
-        if (armed_time.seconds() > 0 && time_from_arming > _control_output_timeout_) {
-
-          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _control_output_timeout_);
-          disarm();
-          changeState(STATE_FINISHED);
-        }
-      }
-
-      if (_simulation_ && isGazeboSimulation()) {
-
-        std::scoped_lock lock(mutex_gazebo_spawner_diagnostics_);
-
-        if (got_gazebo_spawner_diagnostics) {
-
-          if (!gazebo_spawner_diagnostics_.spawn_called || gazebo_spawner_diagnostics_.processing) {
-            RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "(simulation) waiting for spawner to finish spawning UAVs");
-            return;
-          }
-
-        } else {
-
-          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "(simulation) missing spawner diagnostics");
-          return;
-        }
-      }
-
-      // when armed and in offboard, takeoff
-      if (armed && offboard && control_output_enabled) {
-
-        if (!_handle_takeoff_) {
-          changeState(STATE_FINISHED);
-        } else {
-
-          rclcpp::Duration armed_time_diff    = clock_->now() - armed_time;
-          rclcpp::Duration offboard_time_diff = clock_->now() - offboard_time;
-
-          if (armed_time_diff.seconds() > _safety_timeout_ && offboard_time_diff.seconds() > _safety_timeout_) {
-
-            changeState(STATE_TAKEOFF);
-
-          } else {
-
-            double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff.seconds() : offboard_time_diff.seconds();
-
-            RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "taking off in %.0f", (_safety_timeout_ - min));
-          }
-        }
-      }
-
-      break;
+      return;
     }
 
     // | -------------------- ready to takeoff -------------------- |
@@ -646,7 +560,7 @@ void AutomaticStart::timerMain() {
 
     // | -------------------- preflight checks -------------------- |
 
-    bool position_valid = validateReference();
+    bool position_valid = sh_safety_area_manager_diag_.getMsg()->position_valid_2d;
     bool got_topics     = topicCheck();
 
     bool can_takeoff = got_topics && position_valid;
@@ -830,8 +744,6 @@ bool AutomaticStart::takeoff() {
 
   return false;
 }
-
-//}
 
 //}
 
