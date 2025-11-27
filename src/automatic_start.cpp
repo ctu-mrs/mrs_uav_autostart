@@ -8,6 +8,7 @@
 #include <mrs_lib/subscriber_handler.h>
 #include <mrs_lib/publisher_handler.h>
 #include <mrs_lib/service_client_handler.h>
+#include <mrs_lib/errorgraph/error_publisher.h>
 #include <mrs_lib/node.h>
 
 #include <std_msgs/msg/bool.hpp>
@@ -101,6 +102,8 @@ private:
 
   std::string _uav_name_;
   bool        _simulation_;
+
+  std::shared_ptr<mrs_lib::errorgraph::ErrorPublisher> error_publisher_;
 
   // | --------------------- service clients -------------------- |
 
@@ -228,6 +231,7 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   clock_ = node_->get_clock();
 
   cbkgrp_ = node_->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+  error_publisher_ = std::make_shared<mrs_lib::errorgraph::ErrorPublisher>(node_, clock_, "AutomaticStart", "main");
 
   armed_      = false;
   armed_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
@@ -276,9 +280,9 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   param_loader.loadParam("preflight_check/topic_check/topics", _topic_check_topic_names_);
 
   if (!param_loader.loadedSuccessfully()) {
-    RCLCPP_ERROR(node_->get_logger(), "Could not load all parameters!");
-    rclcpp::shutdown();
-    exit(1);
+    RCLCPP_ERROR(this_node().get_logger(), "Could not load all parameters!");
+    error_publisher_->addOneshotError("Could not load all parameters!");
+    error_publisher_->flushAndShutdown();
   }
 
   // | ----------------------- subscribers ---------------------- |
@@ -490,6 +494,19 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
                          "Api=%s, EstimationManager=%s , SafetyAreaManager=%s",
                          got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api ? "true" : "FALSE",
                          got_estimation_diag ? "true" : "FALSE", got_safety_area_manager_diag ? "true" : "FALSE");
+    if (!got_hw_api) {
+      error_publisher_->addWaitingForNodeError({"HwApiManager", "main"});
+    }
+    if (!got_control_manager_diag) {
+      error_publisher_->addWaitingForNodeError({"ControlManager", "main"});
+    }
+    if (!got_uav_manager_diag) {
+      error_publisher_->addWaitingForNodeError({"UavManager", "main"});
+    }
+    if (!got_estimation_diag) {
+      error_publisher_->addWaitingForNodeError({"EstimationManager", "main"});
+    }
+
     co_return;
   }
 
