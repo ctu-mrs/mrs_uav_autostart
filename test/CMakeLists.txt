@@ -7,12 +7,8 @@ function(add_ros_isolated_launch_test path)
   add_launch_test("${path}" RUNNER "${RUNNER}" ${ARGN})
 endfunction()
 
-add_subdirectory(./takeoff_should_succeed)
-
-add_subdirectory(./takeoff_should_fail_while_moving)
-
-add_subdirectory(./takeoff_should_fail_outside_safety_area)
-
-add_subdirectory(./takeoff_trigerred_externally)
-
-add_subdirectory(./takeoff_should_fail_topic_check)
+add_subdirectory(takeoff_should_fail_outside_safety_area)
+add_subdirectory(takeoff_should_fail_topic_check)
+add_subdirectory(takeoff_should_fail_while_moving)
+add_subdirectory(takeoff_should_succeed)
+add_subdirectory(takeoff_trigerred_externally)
