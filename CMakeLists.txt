@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 1 == use rclcpp::Timer implementation
 # 0 == use MRS's thread timer implementation
-set(USE_ROS_TIMER 0)
+set(USE_ROS_TIMER 1)
 
 if(${USE_ROS_TIMER})
   MESSAGE(WARNING "[mrs_uav_autostart]: Compiling with ROS Timers. This can cause high CPU load in runtime.")
