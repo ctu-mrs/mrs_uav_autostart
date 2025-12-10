@@ -38,7 +38,7 @@ Tester::Tester() : mrs_uav_testing::TestGeneric() {
 
   mrs_lib::TimerHandlerOptions opts;
   opts.autostart = false;
-  opts.node = node_;
+  opts.node      = node_;
 
   timer_main_ = std::make_shared<TimerType>(opts, rclcpp::Rate(100.0, clock_), callback_fcn);
 }
@@ -130,7 +130,7 @@ bool Tester::test(void) {
   }
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
 
   rclcpp::init(argc, argv);
 
