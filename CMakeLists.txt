@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.28)
 project(mrs_uav_autostart)
 
 # set the correct standards
@@ -16,7 +16,7 @@ endif()
 
 # set the compile options to show code warnings
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra)
+  add_compile_options("-Wall" "-Wextra" "-Wpedantic")
 endif()
 
 if(ENABLE_COVERAGE)
@@ -38,22 +38,15 @@ set(DEPENDENCIES
   std_srvs
   mrs_uav_testing
   backward_ros
-  )
-
-set(LIBRARIES
-  MrsUavAutostart_AutomaticStart
-  )
+)
 
 foreach(DEP IN LISTS DEPENDENCIES)
   find_package(${DEP} REQUIRED)
 endforeach()
 
-include_directories(
-  include
-  ${rclcpp_INCLUDE_DIRS}
-  ${mrs_lib_INCLUDE_DIRS}
-  ${mrs_uav_testing_INCLUDE_DIRS}
-  )
+set(LIBRARIES
+  MrsUavAutostart_AutomaticStart
+)
 
 ## --------------------------------------------------------------
 ## |                           Compile                          |
@@ -63,13 +56,21 @@ include_directories(
 
 add_library(MrsUavAutostart_AutomaticStart SHARED
   src/automatic_start.cpp
-  )
+)
 
-ament_target_dependencies(MrsUavAutostart_AutomaticStart
-  ${DEPENDENCIES}
-  )
+target_link_libraries(MrsUavAutostart_AutomaticStart
+  PUBLIC
+    rclcpp::rclcpp
+    rclcpp_components::component
+    mrs_lib::mrs_lib
+    ${mrs_msgs_TARGETS}
+    ${std_msgs_TARGETS}
+    ${std_srvs_TARGETS}
+)
 
-rclcpp_components_register_nodes(MrsUavAutostart_AutomaticStart PLUGIN "mrs_uav_autostart::automatic_start::AutomaticStart" EXECUTABLE MrsUavAutostart_AutomaticStart)
+rclcpp_components_register_nodes(MrsUavAutostart_AutomaticStart
+  "mrs_uav_autostart::automatic_start::AutomaticStart"
+)
 
 target_compile_definitions(MrsUavAutostart_AutomaticStart PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
 
@@ -80,6 +81,11 @@ target_compile_definitions(MrsUavAutostart_AutomaticStart PRIVATE USE_ROS_TIMER=
 if(ENABLE_TESTS)
 
   add_subdirectory(test)
+
+  find_package(ament_cmake_clang_format REQUIRED)
+  ament_clang_format(CONFIG_FILE "${PROJECT_SOURCE_DIR}/.clang-format")
+  find_package(ament_cmake_xmllint REQUIRED)
+  ament_xmllint()
 
 endif()
 
@@ -97,30 +103,30 @@ install(
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
-  )
+)
 
 install(
   DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
-  )
+)
 
 install(
   DIRECTORY config
   DESTINATION share/${PROJECT_NAME}
-  )
+)
 
 install(
   DIRECTORY scripts
   USE_SOURCE_PERMISSIONS
   DESTINATION lib/${PROJECT_NAME}
-  )
+)
 
 ament_export_targets(
   export_${PROJECT_NAME} HAS_LIBRARY_TARGET
-  )
+)
 
 ament_export_dependencies(
   ${DEPENDENCIES}
-  )
+)
 
 ament_package()
