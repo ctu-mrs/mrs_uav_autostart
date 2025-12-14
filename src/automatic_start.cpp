@@ -106,9 +106,9 @@ private:
 
   // | --------------------- service clients -------------------- |
 
-  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>           service_client_toggle_control_output_;
-  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>           service_client_arm_;
-  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>           service_client_takeoff_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool> service_client_toggle_control_output_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool> service_client_arm_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger> service_client_takeoff_;
 
   // | ----------------------- subscribers ---------------------- |
 
