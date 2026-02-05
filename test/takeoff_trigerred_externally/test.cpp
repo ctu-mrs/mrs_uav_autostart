@@ -12,13 +12,13 @@ public:
   }
 
   bool test(void);
+
+  std::shared_ptr<mrs_uav_testing::UAVHandler> uh_;
 };
 
 bool Tester::test(void) {
 
   const std::string uav_name = "uav1";
-
-  std::shared_ptr<mrs_uav_testing::UAVHandler> uh;
 
   {
     auto [uhopt, message] = getUAVHandler(uav_name);
@@ -28,7 +28,7 @@ bool Tester::test(void) {
       return false;
     }
 
-    uh = uhopt.value();
+    uh_ = uhopt.value();
   }
 
   // | ---------------- wait for ready to takeoff --------------- |
@@ -41,7 +41,7 @@ bool Tester::test(void) {
 
     RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "waiting for the MRS UAV System");
 
-    if (uh->mrsSystemReady()) {
+    if (uh_->mrsSystemReady()) {
       RCLCPP_INFO(node_->get_logger(), "MRS UAV System is ready");
       break;
     }
@@ -54,7 +54,7 @@ bool Tester::test(void) {
   RCLCPP_INFO(node_->get_logger(), "[%s]: arming the drone", name_.c_str());
 
   {
-    auto [success, message] = uh->arming(true);
+    auto [success, message] = uh_->arming(true);
 
     if (!success) {
       RCLCPP_ERROR(node_->get_logger(), "midair activation failed with message: '%s'", message.c_str());
@@ -68,14 +68,14 @@ bool Tester::test(void) {
 
   // | --------------------- check if armed --------------------- |
 
-  if (!uh->sh_hw_api_status_.getMsg()->armed) {
+  if (!uh_->sh_hw_api_status_.getMsg()->armed) {
     return false;
   }
 
   // | ------------------- switch to offboard ------------------- |
 
   {
-    auto [success, message] = uh->offboard();
+    auto [success, message] = uh_->offboard();
 
     if (!success) {
       RCLCPP_ERROR(node_->get_logger(), "offboard activation failed with message: '%s'", message.c_str());
@@ -89,7 +89,7 @@ bool Tester::test(void) {
 
   // | ------------------ check if in offboard ------------------ |
 
-  if (!uh->sh_hw_api_status_.getMsg()->offboard) {
+  if (!uh_->sh_hw_api_status_.getMsg()->offboard) {
     return false;
   }
 
@@ -98,7 +98,7 @@ bool Tester::test(void) {
   // | ------------------------- takeoff ------------------------ |
 
   {
-    auto [success, message] = uh->takeoffService();
+    auto [success, message] = uh_->takeoffService();
 
     if (!success) {
       RCLCPP_ERROR(node_->get_logger(), "takeoff failed with message: '%s'", message.c_str());
@@ -116,7 +116,7 @@ bool Tester::test(void) {
 
     RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "waiting for the takeoff to finish");
 
-    if (uh->sh_control_manager_diag_.getMsg()->flying_normally) {
+    if (uh_->sh_control_manager_diag_.getMsg()->flying_normally) {
 
       return true;
     }

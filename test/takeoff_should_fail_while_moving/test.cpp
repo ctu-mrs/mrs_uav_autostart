@@ -28,6 +28,8 @@ public:
   std::string uav_name = "uav1";
 
   bool test(void);
+
+  std::shared_ptr<mrs_uav_testing::UAVHandler> uh_;
 };
 
 Tester::Tester() : mrs_uav_testing::TestGeneric() {
@@ -57,8 +59,6 @@ void Tester::timerMain() {
 
 bool Tester::test(void) {
 
-  std::shared_ptr<mrs_uav_testing::UAVHandler> uh;
-
   {
     auto [uhopt, message] = getUAVHandler(uav_name);
 
@@ -67,12 +67,12 @@ bool Tester::test(void) {
       return false;
     }
 
-    uh = uhopt.value();
+    uh_ = uhopt.value();
   }
 
   {
     while (rclcpp::ok()) {
-      if (uh->mrsSystemReady()) {
+      if (uh_->mrsSystemReady()) {
         break;
       }
     }
@@ -89,7 +89,7 @@ bool Tester::test(void) {
     request->data = true;
 
     {
-      auto response = uh->sch_arming_.callSync(request);
+      auto response = uh_->sch_arming_.callSync(request);
 
       if (!response || !response.value()->success) {
         RCLCPP_ERROR(node_->get_logger(), "could not arm the drone");
@@ -104,13 +104,13 @@ bool Tester::test(void) {
 
   sleep(5.0);
 
-  if (uh->getHeightAgl() < 1.5) {
+  if (uh_->getHeightAgl() < 1.5) {
     RCLCPP_ERROR(node_->get_logger(), "the UAV is not as high agl as it should be");
     return false;
   }
 
   {
-    auto [success, message] = uh->takeoff();
+    auto [success, message] = uh_->takeoff();
 
     if (success) {
       RCLCPP_ERROR(node_->get_logger(), "takeoff initiated, this should not be possible");
@@ -120,7 +120,7 @@ bool Tester::test(void) {
 
   sleep(1.0);
 
-  if (uh->isOutputEnabled()) {
+  if (uh_->isOutputEnabled()) {
 
     RCLCPP_ERROR(node_->get_logger(), "control output is still enabled!");
     return false;
