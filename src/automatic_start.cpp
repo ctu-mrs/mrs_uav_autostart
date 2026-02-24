@@ -97,8 +97,6 @@ private:
   rclcpp::CallbackGroup::SharedPtr cbkgrp_subs_;
   rclcpp::CallbackGroup::SharedPtr cbkgrp_sc_;
 
-  void initialize();
-
   std::atomic<bool> is_initialized_ = false;
 
   std::string _uav_name_;
@@ -225,14 +223,6 @@ private:
 /* AutomaticStart() //{ */
 
 AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_start", options) {
-  this->initialize();
-}
-
-//}
-
-/* initialize() //{ */
-
-void AutomaticStart::initialize() {
 
   node_  = this_node_ptr();
   clock_ = node_->get_clock();
