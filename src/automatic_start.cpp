@@ -2,6 +2,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 
+#include <mrs_lib/coro/task.hpp>
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/mutex.h>
 #include <mrs_lib/subscriber_handler.h>
@@ -94,8 +95,7 @@ private:
   rclcpp::Node::SharedPtr  node_;
   rclcpp::Clock::SharedPtr clock_;
 
-  rclcpp::CallbackGroup::SharedPtr cbkgrp_subs_;
-  rclcpp::CallbackGroup::SharedPtr cbkgrp_sc_;
+  rclcpp::CallbackGroup::SharedPtr cbkgrp_;
 
   std::atomic<bool> is_initialized_ = false;
 
@@ -127,7 +127,7 @@ private:
   // | ----------------------- main timer ----------------------- |
 
   std::shared_ptr<TimerType> timer_main_;
-  void                       timerMain();
+  mrs_lib::Task<>            timerMain();
   double                     _main_timer_rate_;
 
   // | ------------------------- hw api ------------------------- |
@@ -157,10 +157,10 @@ private:
 
   // | ------------------------ routines ------------------------ |
 
-  bool takeoff();
+  mrs_lib::Task<bool> takeoff();
 
-  bool toggleControlOutput(const bool &value);
-  bool disarm();
+  mrs_lib::Task<bool> toggleControlOutput(const bool &value);
+  mrs_lib::Task<bool> disarm();
 
   bool isGazeboSimulation(void);
   bool topicCheck(void);
@@ -180,8 +180,8 @@ private:
 
   // | ---------------------- state machine --------------------- |
 
-  uint current_state = STATE_IDLE;
-  void changeState(LandingStates_t new_state);
+  uint                current_state = STATE_IDLE;
+  mrs_lib::Task<void> changeState(LandingStates_t new_state);
 
   // | --------------------- preflight check -------------------- |
 
@@ -227,8 +227,7 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   node_  = this_node_ptr();
   clock_ = node_->get_clock();
 
-  cbkgrp_subs_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-  cbkgrp_sc_   = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  cbkgrp_ = node_->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
   armed_      = false;
   armed_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
@@ -289,7 +288,7 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   shopts.no_message_timeout                  = mrs_lib::no_timeout;
   shopts.threadsafe                          = true;
   shopts.autostart                           = true;
-  shopts.subscription_options.callback_group = cbkgrp_subs_;
+  shopts.subscription_options.callback_group = cbkgrp_;
 
   sh_estimation_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::EstimationDiagnostics>(shopts, "~/estimation_diag_in");
   sh_hw_api_status_   = mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>(shopts, "~/hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
@@ -309,9 +308,9 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   // | --------------------- service clients -------------------- |
 
-  service_client_takeoff_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/takeoff_out", cbkgrp_sc_);
-  service_client_toggle_control_output_ = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/toggle_control_output_out", cbkgrp_sc_);
-  service_client_arm_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/arm_out", cbkgrp_sc_);
+  service_client_takeoff_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/takeoff_out", cbkgrp_);
+  service_client_toggle_control_output_ = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/toggle_control_output_out", cbkgrp_);
+  service_client_arm_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/arm_out", cbkgrp_);
 
   // | ------------------ setup generic topics ------------------ |
 
@@ -346,14 +345,11 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   mrs_lib::TimerHandlerOptions timer_opts_start;
 
-  timer_opts_start.node      = node_;
-  timer_opts_start.autostart = true;
+  timer_opts_start.node           = node_;
+  timer_opts_start.autostart      = true;
+  timer_opts_start.callback_group = cbkgrp_;
 
-  {
-    std::function<void()> callback_fcn = std::bind(&AutomaticStart::timerMain, this);
-
-    timer_main_ = std::make_shared<TimerType>(timer_opts_start, rclcpp::Rate(_main_timer_rate_, clock_), callback_fcn);
-  }
+  timer_main_ = std::make_shared<TimerType>(timer_opts_start, rclcpp::Rate(_main_timer_rate_, clock_), &AutomaticStart::timerMain, this);
 
   // | --------------------- finish the init -------------------- |
 
@@ -476,10 +472,10 @@ void AutomaticStart::callbackGazeboSpawnerDiagnostics(const mrs_msgs::msg::Gazeb
 
 /* timerMain() //{ */
 
-void AutomaticStart::timerMain() {
+mrs_lib::Task<> AutomaticStart::timerMain() {
 
   if (!is_initialized_) {
-    return;
+    co_return;
   }
 
   bool got_uav_manager_diag         = sh_uav_manager_diag_.hasMsg();
@@ -494,7 +490,7 @@ void AutomaticStart::timerMain() {
                          "Api=%s, EstimationManager=%s , SafetyAreaManager=%s",
                          got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api ? "true" : "FALSE",
                          got_estimation_diag ? "true" : "FALSE", got_safety_area_manager_diag ? "true" : "FALSE");
-    return;
+    co_return;
   }
 
   auto [armed, offboard, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_hw_api_status_, armed_, offboard_, armed_time_, offboard_time_);
@@ -524,19 +520,19 @@ void AutomaticStart::timerMain() {
 
         if (we_toggled_output_) {
 
-          bool res = toggleControlOutput(false);
+          bool res = co_await toggleControlOutput(false);
 
           if (!res) {
             RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output OFF");
           }
         }
 
-        changeState(STATE_FINISHED);
+        co_await changeState(STATE_FINISHED);
 
-        return;
+        co_return;
       }
 
-      return;
+      co_return;
     }
 
     // | -------------------- ready to takeoff -------------------- |
@@ -562,7 +558,7 @@ void AutomaticStart::timerMain() {
 
       if (can_takeoff) {
 
-        bool res = toggleControlOutput(true);
+        bool res = co_await toggleControlOutput(true);
 
         if (!res) {
           RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON");
@@ -576,8 +572,8 @@ void AutomaticStart::timerMain() {
       if (armed_time.seconds() > 0 && time_from_arming > _control_output_timeout_) {
 
         RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _control_output_timeout_);
-        disarm();
-        changeState(STATE_FINISHED);
+        co_await disarm();
+        co_await changeState(STATE_FINISHED);
       }
     }
 
@@ -589,13 +585,13 @@ void AutomaticStart::timerMain() {
 
         if (!gazebo_spawner_diagnostics_.spawn_called || gazebo_spawner_diagnostics_.processing) {
           RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) waiting for spawner to finish spawning UAVs");
-          return;
+          co_return;
         }
 
       } else {
 
         RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) missing spawner diagnostics");
-        return;
+        co_return;
       }
     }
 
@@ -603,7 +599,7 @@ void AutomaticStart::timerMain() {
     if (armed && offboard && control_output_enabled) {
 
       if (!_handle_takeoff_) {
-        changeState(STATE_FINISHED);
+        co_await changeState(STATE_FINISHED);
       } else {
 
         rclcpp::Duration armed_time_diff    = clock_->now() - armed_time;
@@ -611,7 +607,7 @@ void AutomaticStart::timerMain() {
 
         if (armed_time_diff.seconds() > _safety_timeout_ && offboard_time_diff.seconds() > _safety_timeout_) {
 
-          changeState(STATE_TAKEOFF);
+          co_await changeState(STATE_TAKEOFF);
 
         } else {
 
@@ -632,7 +628,7 @@ void AutomaticStart::timerMain() {
 
       RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "takeoff finished");
 
-      changeState(STATE_FINISHED);
+      co_await changeState(STATE_FINISHED);
 
     } else {
 
@@ -661,7 +657,7 @@ void AutomaticStart::timerMain() {
 
 /* changeState() //{ */
 
-void AutomaticStart::changeState(LandingStates_t new_state) {
+mrs_lib::Task<> AutomaticStart::changeState(LandingStates_t new_state) {
 
   RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "switching states %s -> %s", state_names[current_state], state_names[new_state]);
 
@@ -679,13 +675,13 @@ void AutomaticStart::changeState(LandingStates_t new_state) {
       clock_->sleep_for(std::chrono::duration<double>(_pre_takeoff_sleep_));
     }
 
-    bool res = takeoff();
+    bool res = co_await takeoff();
 
     if (!res) {
 
       current_state = STATE_FINISHED;
 
-      return;
+      co_return;
     }
 
     break;
@@ -706,19 +702,19 @@ void AutomaticStart::changeState(LandingStates_t new_state) {
 
 /* takeoff() //{ */
 
-bool AutomaticStart::takeoff() {
+mrs_lib::Task<bool> AutomaticStart::takeoff() {
 
   RCLCPP_INFO(node_->get_logger(), "taking off");
 
   std::shared_ptr<std_srvs::srv::Trigger::Request> request = std::make_shared<std_srvs::srv::Trigger::Request>();
 
-  auto response = service_client_takeoff_.callSync(request);
+  auto response = co_await service_client_takeoff_.callAwaitable(request);
 
   if (response) {
 
     if (response.value()->success) {
 
-      return true;
+      co_return true;
 
     } else {
 
@@ -730,14 +726,14 @@ bool AutomaticStart::takeoff() {
     RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "service call for taking off failed");
   }
 
-  return false;
+  co_return false;
 }
 
 //}
 
 /* toggleControlOutput() //{ */
 
-bool AutomaticStart::toggleControlOutput(const bool &value) {
+mrs_lib::Task<bool> AutomaticStart::toggleControlOutput(const bool &value) {
 
   RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "setting control output %s", value ? "ON" : "OFF");
 
@@ -745,13 +741,13 @@ bool AutomaticStart::toggleControlOutput(const bool &value) {
 
   request->data = value;
 
-  auto response = service_client_toggle_control_output_.callSync(request);
+  auto response = co_await service_client_toggle_control_output_.callAwaitable(request);
 
   if (response) {
 
     if (response.value()->success) {
 
-      return true;
+      co_return true;
 
     } else {
 
@@ -763,20 +759,20 @@ bool AutomaticStart::toggleControlOutput(const bool &value) {
     RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "service call for toggling control output failed");
   }
 
-  return false;
+  co_return false;
 }
 
 //}
 
 /* disarm() //{ */
 
-bool AutomaticStart::disarm() {
+mrs_lib::Task<bool> AutomaticStart::disarm() {
 
   if (!hw_api_connected_) {
 
     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "cannot disarm, missing HW API status!");
 
-    return false;
+    co_return false;
   }
 
   auto [armed, offboard, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_hw_api_status_, armed_, offboard_, armed_time_, offboard_time_);
@@ -785,7 +781,7 @@ bool AutomaticStart::disarm() {
 
     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "cannot disarm, already in offboard mode!");
 
-    return false;
+    co_return false;
   }
 
   RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "disarming");
@@ -794,13 +790,13 @@ bool AutomaticStart::disarm() {
 
   request->data = false;
 
-  auto response = service_client_arm_.callSync(request);
+  auto response = co_await service_client_arm_.callAwaitable(request);
 
   if (response) {
 
     if (response.value()->success) {
 
-      return true;
+      co_return true;
 
     } else {
 
@@ -812,7 +808,7 @@ bool AutomaticStart::disarm() {
     RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "service call for disarming failed");
   }
 
-  return false;
+  co_return false;
 }
 
 //}
