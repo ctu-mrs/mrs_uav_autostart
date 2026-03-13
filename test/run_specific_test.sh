@@ -13,6 +13,6 @@ export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
 colcon test-result --delete-yes
 
-colcon test --packages-select mrs_uav_autostart --ctest-args -R 'takeoff_should_fail_topic' --event-handlers console_direct+ console_stderr- console_start_end-
+colcon test --packages-select mrs_uav_autostart --ctest-args -R 'errorgraph' --event-handlers console_direct+ console_stderr- console_start_end-
 
 colcon test-result --all --verbose
