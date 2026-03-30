@@ -22,8 +22,8 @@ public:
 private:
   // Subscription for errorgraph errors - created early to catch startup errors
   rclcpp::Subscription<mrs_msgs::msg::ErrorgraphElement>::SharedPtr sub_errors_;
-  std::mutex errors_mtx_;
-  std::vector<mrs_msgs::msg::ErrorgraphElement> received_errors_;
+  std::mutex                                                        errors_mtx_;
+  std::vector<mrs_msgs::msg::ErrorgraphElement>                     received_errors_;
 
   void errorsCallback(const mrs_msgs::msg::ErrorgraphElement::SharedPtr msg);
 };
@@ -32,9 +32,8 @@ Tester::Tester() : mrs_uav_testing::TestGeneric() {
 
   // Subscribe to the errorgraph errors topic immediately, before blocking on getUAVHandler.
   // This ensures we capture errors published during the startup window.
-  sub_errors_ = node_->create_subscription<mrs_msgs::msg::ErrorgraphElement>(
-      "/uav1/automatic_start/errors", 100,
-      std::bind(&Tester::errorsCallback, this, std::placeholders::_1));
+  sub_errors_ = node_->create_subscription<mrs_msgs::msg::ErrorgraphElement>("/uav1/automatic_start/errors", 100,
+                                                                             std::bind(&Tester::errorsCallback, this, std::placeholders::_1));
 }
 
 void Tester::errorsCallback(const mrs_msgs::msg::ErrorgraphElement::SharedPtr msg) {
@@ -51,10 +50,10 @@ bool Tester::test(void) {
   // waiting_for_node errors every timerMain cycle (30Hz). We should catch at least
   // one publish cycle with errors before all dependencies come online.
 
-  const double timeout_s = 30.0;
-  const double poll_rate_s = 0.1;
-  double elapsed = 0.0;
-  bool found_waiting_error = false;
+  const double timeout_s           = 30.0;
+  const double poll_rate_s         = 0.1;
+  double       elapsed             = 0.0;
+  bool         found_waiting_error = false;
 
   // The set of expected dependency node names
   const std::set<std::string> expected_nodes = {"HwApiManager", "ControlManager", "UavManager", "EstimationManager"};
@@ -66,14 +65,14 @@ bool Tester::test(void) {
     {
       std::scoped_lock lck(errors_mtx_);
 
-      for (const auto& element : received_errors_) {
+      for (const auto &element : received_errors_) {
 
         // Verify source_node identity
         if (element.source_node.node != "AutomaticStart" || element.source_node.component != "main") {
           continue;
         }
 
-        for (const auto& error : element.errors) {
+        for (const auto &error : element.errors) {
           if (error.type == mrs_msgs::msg::ErrorgraphError::TYPE_WAITING_FOR_NODE) {
             found_waiting_error = true;
             found_nodes.insert(error.waited_for_node.node);
@@ -91,19 +90,18 @@ bool Tester::test(void) {
   }
 
   if (!found_waiting_error) {
-    RCLCPP_ERROR(node_->get_logger(), "FAILED: Did not receive any errorgraph messages with waiting_for_node errors within %.1f seconds",
-                 timeout_s);
+    RCLCPP_ERROR(node_->get_logger(), "FAILED: Did not receive any errorgraph messages with waiting_for_node errors within %.1f seconds", timeout_s);
     return false;
   }
 
   RCLCPP_INFO(node_->get_logger(), "SUCCESS: Found waiting_for_node errors. Detected nodes:");
-  for (const auto& n : found_nodes) {
+  for (const auto &n : found_nodes) {
     RCLCPP_INFO(node_->get_logger(), "  - %s", n.c_str());
   }
 
   // Verify that at least one of the expected nodes was reported
   bool any_expected = false;
-  for (const auto& n : found_nodes) {
+  for (const auto &n : found_nodes) {
     if (expected_nodes.count(n) > 0) {
       any_expected = true;
     }
@@ -117,7 +115,7 @@ bool Tester::test(void) {
   return true;
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
 
   rclcpp::init(argc, argv);
 

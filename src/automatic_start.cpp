@@ -230,7 +230,7 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   node_  = this_node_ptr();
   clock_ = node_->get_clock();
 
-  cbkgrp_ = node_->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+  cbkgrp_          = node_->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
   error_publisher_ = std::make_shared<mrs_lib::errorgraph::ErrorPublisher>(node_, clock_, "AutomaticStart", "main");
 
   armed_      = false;
