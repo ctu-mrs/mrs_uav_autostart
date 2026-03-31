@@ -124,11 +124,19 @@ int main(int argc, char *argv[]) {
 
   test_result &= tester.test();
 
-  tester.sleep(2.0);
+  // Sleep long enough for the Python test harness subscriber to connect
+  // to /test_result before we publish. The errorgraph test completes quickly
+  // (~2s), so we need extra time for peer discovery.
+  tester.sleep(10.0);
 
   std::cout << "Test: reporting test results" << std::endl;
 
-  tester.reportTestResult(test_result);
+  // Publish the result multiple times to ensure the Python harness receives it,
+  // since single-shot publishes can be missed with volatile QoS.
+  for (int i = 0; i < 5; i++) {
+    tester.reportTestResult(test_result);
+    tester.sleep(1.0);
+  }
 
   tester.join();
 }

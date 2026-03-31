@@ -18,4 +18,4 @@ install(
   DESTINATION lib/${PROJECT_NAME}
 )
 
-add_ros_isolated_launch_test(test.py TIMEOUT 300)
+add_ros_isolated_launch_test(test.py TIMEOUT 300 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp)
