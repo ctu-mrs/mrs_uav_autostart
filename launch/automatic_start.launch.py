@@ -140,6 +140,7 @@ def generate_launch_description():
                     ("~/toggle_control_output_out", "control_manager/toggle_output"),
                     ("~/arm_out", "hw_api/arming"),
                     ("~/validate_reference_out", "control_manager/validate_reference_2d"),
+                    ("~/errors", "errors"),
                 ],
             )
 
