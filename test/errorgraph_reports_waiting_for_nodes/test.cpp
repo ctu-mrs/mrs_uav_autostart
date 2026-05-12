@@ -32,13 +32,16 @@ Tester::Tester() : mrs_uav_testing::TestGeneric() {
 
   // Subscribe to the errorgraph errors topic immediately, before blocking on getUAVHandler.
   // This ensures we capture errors published during the startup window.
-  sub_errors_ = node_->create_subscription<mrs_msgs::msg::ErrorgraphElement>("/uav1/automatic_start/errors", 100,
-                                                                             std::bind(&Tester::errorsCallback, this, std::placeholders::_1));
+  sub_errors_ =
+      node_->create_subscription<mrs_msgs::msg::ErrorgraphElement>("/uav1/errors", 100, std::bind(&Tester::errorsCallback, this, std::placeholders::_1));
 }
 
 void Tester::errorsCallback(const mrs_msgs::msg::ErrorgraphElement::SharedPtr msg) {
   std::scoped_lock lck(errors_mtx_);
-  received_errors_.push_back(*msg);
+  // Only track messages from AutomaticStart — the shared /errors topic carries messages from all managers
+  if (msg->source_node.node == "AutomaticStart" && msg->source_node.component == "main") {
+    received_errors_.push_back(*msg);
+  }
 }
 
 bool Tester::test(void) {
@@ -66,11 +69,6 @@ bool Tester::test(void) {
       std::scoped_lock lck(errors_mtx_);
 
       for (const auto &element : received_errors_) {
-
-        // Verify source_node identity
-        if (element.source_node.node != "AutomaticStart" || element.source_node.component != "main") {
-          continue;
-        }
 
         for (const auto &error : element.errors) {
           if (error.type == mrs_msgs::msg::ErrorgraphError::TYPE_WAITING_FOR_NODE) {
@@ -125,10 +123,7 @@ int main(int argc, char *argv[]) {
 
   test_result &= tester.test();
 
-  // Sleep long enough for the Python test harness subscriber to connect
-  // to /test_result before we publish. The errorgraph test completes quickly
-  // (~2s), so we need extra time for peer discovery.
-  tester.sleep(10.0);
+  tester.sleep(2.0);
 
   std::cout << "Test: reporting test results" << std::endl;
 
