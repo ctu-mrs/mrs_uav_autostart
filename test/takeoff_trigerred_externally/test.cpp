@@ -106,6 +106,8 @@ bool Tester::test(void) {
     }
   }
 
+  sleep(2.0);
+
   // | --------------- wait for takeoff to finish --------------- |
 
   while (true) {
