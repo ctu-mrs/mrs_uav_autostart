@@ -9,10 +9,10 @@ while [ ! -e "build/COLCON_IGNORE" ]; do
   fi
 done
 
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 
 colcon test-result --delete-yes
 
-colcon test --packages-select mrs_uav_autostart --ctest-args -R 'externally' --event-handlers console_direct+ console_stderr- console_start_end-
+colcon test --packages-select mrs_uav_autostart --ctest-args -R 'error' --event-handlers console_direct+ console_stderr- console_start_end-
 
 colcon test-result --all --verbose
