@@ -246,11 +246,24 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   param_loader.loadParam("custom_config", custom_config_path);
 
   if (custom_config_path != "") {
-    param_loader.addYamlFile(custom_config_path);
+    if (!param_loader.addYamlFile(custom_config_path)) {
+      RCLCPP_ERROR(node_->get_logger(), "failed to load custom_config");
+      error_publisher_->addOneshotError("failed to load custom_config");
+      error_publisher_->flushAndShutdown();
+    }
   }
 
-  param_loader.addYamlFileFromParam("config_private");
-  param_loader.addYamlFileFromParam("config_public");
+  if (!param_loader.addYamlFileFromParam("config_private")) {
+    RCLCPP_ERROR(node_->get_logger(), "failed to load config_private");
+    error_publisher_->addOneshotError("failed to load config_private");
+    error_publisher_->flushAndShutdown();
+  }
+
+  if (!param_loader.addYamlFileFromParam("config_public")) {
+    RCLCPP_ERROR(node_->get_logger(), "failed to load config_public");
+    error_publisher_->addOneshotError("failed to load config_public");
+    error_publisher_->flushAndShutdown();
+  }
 
   param_loader.loadParam("uav_name", _uav_name_);
   param_loader.loadParam("simulation", _simulation_);
