@@ -38,9 +38,6 @@ typedef mrs_lib::ThreadTimer TimerType;
 namespace mrs_uav_autostart
 {
 
-namespace automatic_start
-{
-
 /* class AutomaticStart //{ */
 
 // state machine
@@ -746,9 +743,7 @@ bool AutomaticStart::isGazeboSimulation(void) {
 
 //}
 
-} // namespace automatic_start
-
 } // namespace mrs_uav_autostart
 
 #include <rclcpp_components/register_node_macro.hpp>
-RCLCPP_COMPONENTS_REGISTER_NODE(mrs_uav_autostart::automatic_start::AutomaticStart)
+RCLCPP_COMPONENTS_REGISTER_NODE(mrs_uav_autostart::AutomaticStart)
