@@ -11,6 +11,8 @@
 #include <mrs_lib/errorgraph/error_publisher.h>
 #include <mrs_lib/node.h>
 
+#include <yaml-cpp/yaml.h>
+
 #include <std_msgs/msg/bool.hpp>
 
 #include <std_srvs/srv/trigger.hpp>
@@ -165,6 +167,7 @@ private:
   mrs_lib::Task<bool> disarm();
 
   bool isGazeboSimulation(void);
+  bool hasObsoleteParams(const std::string &custom_config_path);
   bool topicCheck(void);
   bool preflightCheckSpeed(void);
   bool preflighCheckHeight(void);
@@ -174,10 +177,9 @@ private:
 
   // | ---------------------- other params ---------------------- |
 
-  double      _pre_takeoff_sleep_;
-  bool        _handle_takeoff_ = false;
-  double      _safety_timeout_;
-  double      _control_output_timeout_;
+  bool   _trigger_takeoff_ = false;
+  double _takeoff_countdown_;
+  double _arm_to_output_timeout_;
 
   // | ---------------------- state machine --------------------- |
 
@@ -267,12 +269,14 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   param_loader.loadParam("simulation", _simulation_);
 
   param_loader.loadParam("mrs_uav_autostart/main_timer_rate", _main_timer_rate_);
-  param_loader.loadParam("mrs_uav_autostart/control_output_timeout", _control_output_timeout_);
+  param_loader.loadParam("mrs_uav_autostart/arm_to_output_timeout", _arm_to_output_timeout_);
 
-  param_loader.loadParam("mrs_uav_autostart/safety_timeout", _safety_timeout_);
-  param_loader.loadParam("mrs_uav_autostart/pre_takeoff_sleep", _pre_takeoff_sleep_);
+  param_loader.loadParam("mrs_uav_autostart/takeoff_countdown", _takeoff_countdown_);
+  param_loader.loadParam("mrs_uav_autostart/trigger_takeoff", _trigger_takeoff_);
 
-  param_loader.loadParam("mrs_uav_autostart/handle_takeoff", _handle_takeoff_);
+  if (hasObsoleteParams(custom_config_path)) {
+    error_publisher_->flushAndShutdown();
+  }
 
   param_loader.loadParam("mrs_uav_autostart/preflight_check/time_window", _preflight_check_time_window_);
 
@@ -596,9 +600,9 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
       double time_from_arming = (clock_->now() - armed_time).seconds();
 
-      if (armed_time.seconds() > 0 && time_from_arming > _control_output_timeout_) {
+      if (armed_time.seconds() > 0 && time_from_arming > _arm_to_output_timeout_) {
 
-        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _control_output_timeout_);
+        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _arm_to_output_timeout_);
         co_await disarm();
         co_await changeState(STATE_FINISHED);
       }
@@ -625,14 +629,14 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
     // when armed and in offboard, takeoff
     if (armed && offboard && control_output_enabled) {
 
-      if (!_handle_takeoff_) {
+      if (!_trigger_takeoff_) {
         co_await changeState(STATE_FINISHED);
       } else {
 
         rclcpp::Duration armed_time_diff    = clock_->now() - armed_time;
         rclcpp::Duration offboard_time_diff = clock_->now() - offboard_time;
 
-        if (armed_time_diff.seconds() > _safety_timeout_ && offboard_time_diff.seconds() > _safety_timeout_) {
+        if (armed_time_diff.seconds() > _takeoff_countdown_ && offboard_time_diff.seconds() > _takeoff_countdown_) {
 
           co_await changeState(STATE_TAKEOFF);
 
@@ -640,7 +644,7 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
           double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff.seconds() : offboard_time_diff.seconds();
 
-          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off in %.0f", (_safety_timeout_ - min));
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off in %.0f", (_takeoff_countdown_ - min));
         }
       }
     }
@@ -696,11 +700,6 @@ mrs_lib::Task<> AutomaticStart::changeState(LandingStates_t new_state) {
   }
 
   case STATE_TAKEOFF: {
-
-    if (_pre_takeoff_sleep_ > 1.0) {
-      RCLCPP_INFO(node_->get_logger(), "sleeping for %.2f secs before takeoff", _pre_takeoff_sleep_);
-      clock_->sleep_for(std::chrono::duration<double>(_pre_takeoff_sleep_));
-    }
 
     bool res = co_await takeoff();
 
@@ -836,6 +835,57 @@ mrs_lib::Task<bool> AutomaticStart::disarm() {
   }
 
   co_return false;
+}
+
+//}
+
+/* hasObsoleteParams() //{ */
+
+// An obsolete key would otherwise be silently ignored and fall back to the default -- e.g. an old
+// "handle_takeoff: false" would make us take off on our own. Refuse to start instead.
+bool AutomaticStart::hasObsoleteParams(const std::string &custom_config_path) {
+
+  if (custom_config_path.empty()) {
+    return false;
+  }
+
+  // old name -> new name
+  const std::vector<std::pair<std::string, std::string>> obsolete_params = {
+      {"safety_timeout", "mrs_uav_autostart/takeoff_countdown"},
+      {"handle_takeoff", "mrs_uav_autostart/trigger_takeoff"},
+      {"control_output_timeout", "mrs_uav_autostart/arm_to_output_timeout"},
+      {"pre_takeoff_sleep", "mrs_uav_autostart/takeoff_countdown"},
+  };
+
+  const YAML::Node config = YAML::LoadFile(custom_config_path);
+
+  if (!config.IsMap()) {
+    return false;
+  }
+
+  // a missing key gives an invalid node: test it with operator bool before calling IsMap() on it
+  const YAML::Node section = config["mrs_uav_autostart"];
+
+  bool found = false;
+
+  const auto report = [&](const std::string &name, const std::string &new_name) {
+    RCLCPP_ERROR(node_->get_logger(), "obsolete parameter '%s' found in custom_config, use '%s' instead", name.c_str(), new_name.c_str());
+    error_publisher_->addOneshotError("obsolete parameter '" + name + "' in custom_config");
+    found = true;
+  };
+
+  for (const auto &[old_name, new_name] : obsolete_params) {
+
+    if (config[old_name]) {
+      report(old_name, new_name);
+    }
+
+    if (section && section.IsMap() && section[old_name]) {
+      report("mrs_uav_autostart/" + old_name, new_name);
+    }
+  }
+
+  return found;
 }
 
 //}

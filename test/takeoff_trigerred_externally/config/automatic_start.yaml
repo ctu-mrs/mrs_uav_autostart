@@ -1,2 +1,2 @@
 mrs_uav_autostart:
-  handle_takeoff: false
+  trigger_takeoff: false
