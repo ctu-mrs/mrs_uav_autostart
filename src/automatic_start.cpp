@@ -43,14 +43,14 @@ namespace mrs_uav_autostart
 /* class AutomaticStart //{ */
 
 // state machine
-enum LandingStates_t
+enum AutostartState_t
 {
   STATE_IDLE,
   STATE_TAKEOFF,
   STATE_FINISHED
 };
 
-constexpr std::array<const char *, 3> state_names = {"IDLING", "TAKEOFF", "FINISHED"};
+constexpr std::array<const char *, 3> state_names = {"IDLE", "TAKEOFF", "FINISHED"};
 
 class AutomaticStart : public mrs_lib::Node {
 
@@ -142,8 +142,8 @@ private:
 
   // | ---------------------- state machine --------------------- |
 
-  LandingStates_t     current_state = STATE_IDLE;
-  mrs_lib::Task<void> changeState(LandingStates_t new_state);
+  AutostartState_t    current_state_ = STATE_IDLE;
+  mrs_lib::Task<void> changeState(AutostartState_t new_state);
 };
 
 //}
@@ -393,7 +393,7 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
   auto [armed, offboard, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_uav_state_, armed_, offboard_, armed_time_, offboard_time_);
   auto control_info                                 = sh_control_info_.getMsg();
 
-  switch (current_state) {
+  switch (current_state_) {
 
   case STATE_IDLE: {
 
@@ -536,9 +536,9 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
 /* changeState() //{ */
 
-mrs_lib::Task<> AutomaticStart::changeState(LandingStates_t new_state) {
+mrs_lib::Task<> AutomaticStart::changeState(AutostartState_t new_state) {
 
-  RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "switching states %s -> %s", state_names[current_state], state_names[new_state]);
+  RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "switching states %s -> %s", state_names[current_state_], state_names[new_state]);
 
   switch (new_state) {
 
@@ -553,7 +553,7 @@ mrs_lib::Task<> AutomaticStart::changeState(LandingStates_t new_state) {
 
     if (!res) {
 
-      current_state = STATE_FINISHED;
+      current_state_ = STATE_FINISHED;
 
       co_return;
     }
@@ -567,7 +567,7 @@ mrs_lib::Task<> AutomaticStart::changeState(LandingStates_t new_state) {
   }
   }
 
-  current_state = new_state;
+  current_state_ = new_state;
 }
 
 //}
