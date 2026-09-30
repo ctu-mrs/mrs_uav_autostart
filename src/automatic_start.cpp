@@ -114,6 +114,9 @@ private:
   rclcpp::Time offboard_time_;
   bool         offboard_ = false;
 
+  // a tracker (or a pilot) is already flying the UAV, so there is nothing left for us to start
+  bool flying_ = false;
+
   // last confirmed armed/offboard reading, so a transient UNKNOWN/LINK_LOST gap can't reset the timers
   bool last_confirmed_armed_    = false;
   bool last_confirmed_offboard_ = false;
@@ -290,6 +293,9 @@ void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr
 
   armed_    = is_armed;
   offboard_ = is_offboard;
+  flying_   = state == mrs_msgs::msg::State::STATE_TAKEOFF || state == mrs_msgs::msg::State::STATE_HOVER || state == mrs_msgs::msg::State::STATE_GOTO ||
+            state == mrs_msgs::msg::State::STATE_TRAJECTORY || state == mrs_msgs::msg::State::STATE_LAND || state == mrs_msgs::msg::State::STATE_RC_MODE ||
+            state == mrs_msgs::msg::State::STATE_MANUAL;
 
   // latch + update the confirmed-state trackers, skipping ambiguous UNKNOWN/LINK_LOST readings
   if (state != mrs_msgs::msg::State::STATE_LINK_LOST && state != mrs_msgs::msg::State::STATE_UNKNOWN) {
@@ -358,12 +364,18 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
     co_return;
   }
 
-  auto [armed, offboard, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_uav_state_, armed_, offboard_, armed_time_, offboard_time_);
-  auto control_info                                 = sh_control_info_.getMsg();
+  auto [armed, offboard, flying, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_uav_state_, armed_, offboard_, flying_, armed_time_, offboard_time_);
+  auto control_info                                         = sh_control_info_.getMsg();
 
   switch (current_state_) {
 
   case STATE_IDLE: {
+
+    if (flying) {
+      RCLCPP_WARN(node_->get_logger(), "the UAV is already flying, nothing to start");
+      co_await changeState(STATE_FINISHED);
+      co_return;
+    }
 
     // | --------------------- preflight check -------------------- |
 
