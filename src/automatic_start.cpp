@@ -279,41 +279,17 @@ void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr
 
   std::scoped_lock lock(mutex_uav_state_);
 
-  // check armed_ state
-  if (!armed_) {
-
-    // start the clock, unless recovering from an ambiguous gap (see last_confirmed_armed_ above)
-    if (is_armed) {
-
-      armed_ = true;
-      if (!last_confirmed_armed_) {
-        armed_time_ = clock_->now();
-      }
-    }
-
-    // if we were armed_ previously, and we are not really now
-  } else if (!is_armed) {
-
-    armed_ = false;
+  // start the clocks on a rising edge, unless recovering from an ambiguous gap (see last_confirmed_armed_)
+  if (is_armed && !armed_ && !last_confirmed_armed_) {
+    armed_time_ = clock_->now();
   }
 
-  // check offboard_ state
-  if (!offboard_) {
-
-    // same recovery-from-ambiguity exception as armed_ above
-    if (is_offboard) {
-
-      offboard_ = true;
-      if (!last_confirmed_offboard_) {
-        offboard_time_ = clock_->now();
-      }
-    }
-
-    // if we were in offboard_ previously, and we are not really now
-  } else if (!is_offboard) {
-
-    offboard_ = false;
+  if (is_offboard && !offboard_ && !last_confirmed_offboard_) {
+    offboard_time_ = clock_->now();
   }
+
+  armed_    = is_armed;
+  offboard_ = is_offboard;
 
   // latch + update the confirmed-state trackers, skipping ambiguous UNKNOWN/LINK_LOST readings
   if (state != mrs_msgs::msg::State::STATE_LINK_LOST && state != mrs_msgs::msg::State::STATE_UNKNOWN) {
@@ -415,8 +391,6 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
         }
 
         co_await changeState(STATE_FINISHED);
-
-        co_return;
       }
 
       co_return;
@@ -425,17 +399,10 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
     // | -------------------- ready to takeoff -------------------- |
 
     // safe to read directly: output_enabled defaults to false whenever its source was invalid
-    bool control_output_enabled = control_info->output_enabled;
+    const bool control_output_enabled         = control_info->output_enabled;
+    const bool ready_to_enable_control_output = preflight.topics_ok && preflight.position_valid;
 
     std_msgs::msg::Bool ready_to_enable_control_output_msg;
-    ready_to_enable_control_output_msg.data = false;
-
-    // | -------------------- preflight checks -------------------- |
-
-    bool ready_to_enable_control_output = preflight.topics_ok && preflight.position_valid;
-
-    // | ---------------------------------------------------------- |
-
     ready_to_enable_control_output_msg.data = ready_to_enable_control_output;
     ph_ready_to_enable_control_output_.publish(ready_to_enable_control_output_msg);
 
@@ -639,16 +606,7 @@ mrs_lib::Task<bool> AutomaticStart::toggleControlOutput(const bool &value) {
 
 mrs_lib::Task<bool> AutomaticStart::disarm() {
 
-  if (!uav_state_valid_ever_) {
-
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "cannot disarm, missing UAV state!");
-
-    co_return false;
-  }
-
-  auto [armed, offboard, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_uav_state_, armed_, offboard_, armed_time_, offboard_time_);
-
-  if (offboard) {
+  if (mrs_lib::get_mutexed(mutex_uav_state_, offboard_)) {
 
     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "cannot disarm, already in offboard mode!");
 
