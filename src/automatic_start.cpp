@@ -445,22 +445,21 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
       if (ready_to_enable_control_output) {
 
-        bool res = co_await toggleControlOutput(true);
+        we_toggled_output_ = co_await toggleControlOutput(true);
 
-        if (!res) {
+        if (!we_toggled_output_) {
           RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON");
-        } else {
-          we_toggled_output_ = true;
         }
       }
 
-      double time_from_arming = (clock_->now() - armed_time).seconds();
+      const double time_from_arming = (clock_->now() - armed_time).seconds();
 
-      if (armed_time.seconds() > 0 && time_from_arming > _arm_to_output_timeout_) {
+      if (!we_toggled_output_ && armed_time.seconds() > 0 && time_from_arming > _arm_to_output_timeout_) {
 
         RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _arm_to_output_timeout_);
         co_await disarm();
         co_await changeState(STATE_FINISHED);
+        co_return;
       }
     }
 
