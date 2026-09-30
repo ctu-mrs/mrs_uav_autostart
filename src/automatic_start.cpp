@@ -130,7 +130,22 @@ private:
   bool last_confirmed_armed_    = false;
   bool last_confirmed_offboard_ = false;
 
+  // MANUAL: armed, not offboard, the autopilot reports in-air -- it flies the UAV without offboard
+  bool manual_ = false;
+
+  // explicit STATE_DISARMED only; LINK_LOST/UNKNOWN are not a disarm
+  bool disarmed_ = false;
+
   bool we_toggled_output_ = false;
+
+  // | ------------------ MANUAL pause (timer-owned) ----------------- |
+
+  bool         manual_pause_      = false;
+  bool         needs_rearm_       = false;
+  bool         paused_output_off_ = false; // we turned the output OFF during this pause (ControlInfo may still lag)
+  rclcpp::Time manual_since_;
+  rclcpp::Time armed_stable_since_;
+  rclcpp::Time resume_time_;
 
   // | ------------------------ routines ------------------------ |
 
@@ -148,6 +163,7 @@ private:
 
   bool   _trigger_takeoff_ = false;
   double _takeoff_countdown_;
+  double _manual_abort_max_duration_;
   double _arm_to_output_timeout_;
   double _diagnostics_manager_timeout_;
 
@@ -176,6 +192,10 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   offboard_      = false;
   offboard_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
+
+  manual_since_       = rclcpp::Time(0, 0, clock_->get_clock_type());
+  armed_stable_since_ = rclcpp::Time(0, 0, clock_->get_clock_type());
+  resume_time_        = rclcpp::Time(0, 0, clock_->get_clock_type());
 
   mrs_lib::ParamLoader param_loader(node_, "AutomaticStart");
 
@@ -211,6 +231,7 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   param_loader.loadParam("mrs_uav_autostart/diagnostics_manager_timeout", _diagnostics_manager_timeout_);
 
   param_loader.loadParam("mrs_uav_autostart/takeoff_countdown", _takeoff_countdown_);
+  param_loader.loadParam("mrs_uav_autostart/manual_abort_max_duration", _manual_abort_max_duration_);
   param_loader.loadParam("mrs_uav_autostart/trigger_takeoff", _trigger_takeoff_);
 
   if (hasObsoleteParams(custom_config_path)) {
@@ -305,8 +326,9 @@ void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr
   armed_    = is_armed;
   offboard_ = is_offboard;
   flying_   = state == mrs_msgs::msg::State::STATE_TAKEOFF || state == mrs_msgs::msg::State::STATE_HOVER || state == mrs_msgs::msg::State::STATE_GOTO ||
-            state == mrs_msgs::msg::State::STATE_TRAJECTORY || state == mrs_msgs::msg::State::STATE_LAND || state == mrs_msgs::msg::State::STATE_RC_MODE ||
-            state == mrs_msgs::msg::State::STATE_MANUAL;
+            state == mrs_msgs::msg::State::STATE_TRAJECTORY || state == mrs_msgs::msg::State::STATE_LAND || state == mrs_msgs::msg::State::STATE_RC_MODE;
+  manual_   = state == mrs_msgs::msg::State::STATE_MANUAL;
+  disarmed_ = state == mrs_msgs::msg::State::STATE_DISARMED;
 
   // latch + update the confirmed-state trackers, skipping ambiguous UNKNOWN/LINK_LOST readings
   if (state != mrs_msgs::msg::State::STATE_LINK_LOST && state != mrs_msgs::msg::State::STATE_UNKNOWN) {
@@ -382,8 +404,9 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
     data_ready_time_ = clock_->now();
   }
 
-  auto [armed, offboard, flying, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_uav_state_, armed_, offboard_, flying_, armed_time_, offboard_time_);
-  auto control_info                                         = sh_control_info_.getMsg();
+  auto [armed, offboard, flying, manual, disarmed, armed_time, offboard_time] =
+      mrs_lib::get_mutexed(mutex_uav_state_, armed_, offboard_, flying_, manual_, disarmed_, armed_time_, offboard_time_);
+  auto control_info = sh_control_info_.getMsg();
 
   switch (current_state_) {
 
@@ -393,6 +416,86 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
       RCLCPP_WARN(node_->get_logger(), "the UAV is already flying, nothing to start");
       co_await changeState(STATE_FINISHED);
       co_return;
+    }
+
+    // | ------ MANUAL: PX4 flies the UAV without offboard ------ |
+    // keep control output OFF so MRS can't take over (OFFBOARD finds no setpoints); a short MANUAL is an aborted
+    // OFFBOARD on the ground and resumes, a long one is a real flight and needs disarm -> arm
+
+    if (manual) {
+
+      if (!manual_pause_) {
+        RCLCPP_WARN(node_->get_logger(), "the UAV is flying without offboard (MANUAL), pausing");
+        manual_pause_ = true;
+        manual_since_ = clock_->now();
+      }
+
+      if ((clock_->now() - manual_since_).seconds() >= _manual_abort_max_duration_) {
+        needs_rearm_ = true;
+      }
+
+      if (we_toggled_output_) {
+        if (co_await toggleControlOutput(false)) {
+          we_toggled_output_ = false;
+          paused_output_off_ = true;
+        } else {
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output OFF");
+        }
+      } else if (control_info->output_enabled && !paused_output_off_) {
+        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "control output is ON during MANUAL, but automatic start did not turn it on");
+      }
+
+      armed_stable_since_ = rclcpp::Time(0, 0, clock_->get_clock_type());
+      co_return;
+    }
+
+    if (manual_pause_) {
+
+      if (disarmed) {
+        RCLCPP_INFO(node_->get_logger(), "disarmed after MANUAL, starting over");
+        manual_pause_      = false;
+        needs_rearm_       = false;
+        paused_output_off_ = false;
+
+      } else if (!armed) {
+        // LINK_LOST / UNKNOWN: neither a disarm nor a landing -- stay paused; the UAV may still be flying manually, so a
+        // long blind pause counts towards the MANUAL duration as well
+        if ((clock_->now() - manual_since_).seconds() >= _manual_abort_max_duration_) {
+          needs_rearm_ = true;
+        }
+        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "paused, UAV state not confirmed (LINK_LOST/UNKNOWN)");
+        armed_stable_since_ = rclcpp::Time(0, 0, clock_->get_clock_type());
+        co_return;
+
+      } else if (needs_rearm_) {
+        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 5000, "the UAV has flown without offboard, disarm and arm again to use automatic start");
+        co_return;
+
+      } else {
+
+        // the preflight heuristics lag behind a UAV that just moved (e.g. PX4's landing descent); resuming now would
+        // let the "armed + possibly in the air" guard below finish automatic start, so wait for them to settle first
+        const auto &preflight_pause = sh_general_robot_info_.getMsg()->preflight_status;
+
+        if (!offboard && !(preflight_pause.speed_ok && preflight_pause.height_ok && preflight_pause.gyro_ok)) {
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "paused after MANUAL, waiting for the UAV to settle before resuming");
+          armed_stable_since_ = rclcpp::Time(0, 0, clock_->get_clock_type());
+          co_return;
+        }
+
+        if (armed_stable_since_.nanoseconds() == 0) {
+          armed_stable_since_ = clock_->now();
+        }
+
+        if ((clock_->now() - armed_stable_since_).seconds() < 1.0) {
+          co_return;
+        }
+
+        RCLCPP_INFO(node_->get_logger(), "MANUAL was short (aborted OFFBOARD), resuming");
+        manual_pause_      = false;
+        paused_output_off_ = false;
+        resume_time_       = clock_->now();
+      }
     }
 
     // | --------------------- preflight check -------------------- |
@@ -448,7 +551,7 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
       }
 
       // counted from when we could first act, so data arriving late can't make us disarm right away
-      const double time_waiting = (clock_->now() - std::max(armed_time, data_ready_time_)).seconds();
+      const double time_waiting = (clock_->now() - std::max({armed_time, data_ready_time_, resume_time_})).seconds();
 
       if (!we_toggled_output_ && time_waiting > _arm_to_output_timeout_) {
 
