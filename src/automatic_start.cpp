@@ -273,11 +273,9 @@ void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr
   const bool is_armed =
       !(state == mrs_msgs::msg::State::STATE_DISARMED || state == mrs_msgs::msg::State::STATE_LINK_LOST || state == mrs_msgs::msg::State::STATE_UNKNOWN);
 
-  // Allow-list so an unrecognized future state defaults to false; RC_MODE counts, MANUAL doesn't.
-  const bool is_offboard = state == mrs_msgs::msg::State::STATE_OFFBOARD || state == mrs_msgs::msg::State::STATE_TAKEOFF ||
-                           state == mrs_msgs::msg::State::STATE_HOVER || state == mrs_msgs::msg::State::STATE_GOTO ||
-                           state == mrs_msgs::msg::State::STATE_TRAJECTORY || state == mrs_msgs::msg::State::STATE_LAND ||
-                           state == mrs_msgs::msg::State::STATE_RC_MODE;
+  // STATE_OFFBOARD means armed + offboard link, no tracker active yet -- i.e. on the ground.
+  // Any other flying state must count as not offboard, so timerMain()'s possibly_in_the_air guard catches it.
+  const bool is_offboard = state == mrs_msgs::msg::State::STATE_OFFBOARD;
 
   std::scoped_lock lock(mutex_uav_state_);
 
@@ -481,25 +479,19 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
       }
     }
 
-    // when armed and in offboard, takeoff
-    if (armed && offboard && control_output_enabled) {
+    // STATE_OFFBOARD implies armed, and offboard always follows arming, so the offboard timer alone suffices
+    if (offboard && control_output_enabled) {
 
       if (!_trigger_takeoff_) {
         co_await changeState(STATE_FINISHED);
       } else {
 
-        rclcpp::Duration armed_time_diff    = clock_->now() - armed_time;
-        rclcpp::Duration offboard_time_diff = clock_->now() - offboard_time;
+        const double offboard_time_diff = (clock_->now() - offboard_time).seconds();
 
-        if (armed_time_diff.seconds() > _takeoff_countdown_ && offboard_time_diff.seconds() > _takeoff_countdown_) {
-
+        if (offboard_time_diff > _takeoff_countdown_) {
           co_await changeState(STATE_TAKEOFF);
-
         } else {
-
-          double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff.seconds() : offboard_time_diff.seconds();
-
-          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off in %.0f", (_takeoff_countdown_ - min));
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off in %.0f", (_takeoff_countdown_ - offboard_time_diff));
         }
       }
     }
