@@ -43,14 +43,14 @@ namespace mrs_uav_autostart
 /* class AutomaticStart //{ */
 
 // state machine
-enum LandingStates_t
+enum AutostartState_t
 {
   STATE_IDLE,
   STATE_TAKEOFF,
   STATE_FINISHED
 };
 
-constexpr std::array<const char *, 3> state_names = {"IDLING", "TAKEOFF", "FINISHED"};
+constexpr std::array<const char *, 3> state_names = {"IDLE", "TAKEOFF", "FINISHED"};
 
 class AutomaticStart : public mrs_lib::Node {
 
@@ -102,7 +102,7 @@ private:
   // | --------------- Gazebo spawner diagnostics --------------- |
 
   void                                    callbackGazeboSpawnerDiagnostics(const mrs_msgs::msg::GazeboSpawnerDiagnostics::ConstSharedPtr msg);
-  std::atomic<bool>                       got_gazebo_spawner_diagnostics = false;
+  std::atomic<bool>                       got_gazebo_spawner_diagnostics_ = false;
   mrs_msgs::msg::GazeboSpawnerDiagnostics gazebo_spawner_diagnostics_;
   std::mutex                              mutex_gazebo_spawner_diagnostics_;
 
@@ -141,8 +141,8 @@ private:
 
   // | ---------------------- state machine --------------------- |
 
-  LandingStates_t     current_state = STATE_IDLE;
-  mrs_lib::Task<void> changeState(LandingStates_t new_state);
+  AutostartState_t    current_state_ = STATE_IDLE;
+  mrs_lib::Task<void> changeState(AutostartState_t new_state);
 };
 
 //}
@@ -342,7 +342,7 @@ void AutomaticStart::callbackGazeboSpawnerDiagnostics(const mrs_msgs::msg::Gazeb
 
     gazebo_spawner_diagnostics_ = *msg;
 
-    got_gazebo_spawner_diagnostics = true;
+    got_gazebo_spawner_diagnostics_ = true;
   }
 }
 
@@ -387,7 +387,7 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
   auto [armed, offboard, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_uav_state_, armed_, offboard_, armed_time_, offboard_time_);
   auto control_info                                 = sh_control_info_.getMsg();
 
-  switch (current_state) {
+  switch (current_state_) {
 
   case STATE_IDLE: {
 
@@ -468,7 +468,7 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
       std::scoped_lock lock(mutex_gazebo_spawner_diagnostics_);
 
-      if (got_gazebo_spawner_diagnostics) {
+      if (got_gazebo_spawner_diagnostics_) {
 
         if (!gazebo_spawner_diagnostics_.spawn_called || gazebo_spawner_diagnostics_.processing) {
           RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) waiting for spawner to finish spawning UAVs");
@@ -544,9 +544,9 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
 /* changeState() //{ */
 
-mrs_lib::Task<> AutomaticStart::changeState(LandingStates_t new_state) {
+mrs_lib::Task<> AutomaticStart::changeState(AutostartState_t new_state) {
 
-  RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "switching states %s -> %s", state_names[current_state], state_names[new_state]);
+  RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "switching states %s -> %s", state_names[current_state_], state_names[new_state]);
 
   switch (new_state) {
 
@@ -561,7 +561,7 @@ mrs_lib::Task<> AutomaticStart::changeState(LandingStates_t new_state) {
 
     if (!res) {
 
-      current_state = STATE_FINISHED;
+      current_state_ = STATE_FINISHED;
 
       co_return;
     }
@@ -575,7 +575,7 @@ mrs_lib::Task<> AutomaticStart::changeState(LandingStates_t new_state) {
   }
   }
 
-  current_state = new_state;
+  current_state_ = new_state;
 }
 
 //}
