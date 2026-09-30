@@ -2,6 +2,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 
+#include <algorithm>
 #include <array>
 
 #include <mrs_lib/coro/task.hpp>
@@ -99,6 +100,9 @@ private:
   std::atomic<bool> uav_state_valid_ever_ = false;
   std::mutex        mutex_uav_state_;
 
+  // first time all DiagnosticsManager data was available; the arm-to-output timeout never counts time before it
+  rclcpp::Time data_ready_time_;
+
   // | --------------- Gazebo spawner diagnostics --------------- |
 
   void                                    callbackGazeboSpawnerDiagnostics(const mrs_msgs::msg::GazeboSpawnerDiagnostics::ConstSharedPtr msg);
@@ -162,6 +166,8 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   armed_      = false;
   armed_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
+
+  data_ready_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
 
   offboard_      = false;
   offboard_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
@@ -364,6 +370,10 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
     co_return;
   }
 
+  if (data_ready_time_.nanoseconds() == 0) {
+    data_ready_time_ = clock_->now();
+  }
+
   auto [armed, offboard, flying, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_uav_state_, armed_, offboard_, flying_, armed_time_, offboard_time_);
   auto control_info                                         = sh_control_info_.getMsg();
 
@@ -429,9 +439,10 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
         }
       }
 
-      const double time_from_arming = (clock_->now() - armed_time).seconds();
+      // counted from when we could first act, so data arriving late can't make us disarm right away
+      const double time_waiting = (clock_->now() - std::max(armed_time, data_ready_time_)).seconds();
 
-      if (!we_toggled_output_ && armed_time.seconds() > 0 && time_from_arming > _arm_to_output_timeout_) {
+      if (!we_toggled_output_ && time_waiting > _arm_to_output_timeout_) {
 
         RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _arm_to_output_timeout_);
         co_await disarm();
