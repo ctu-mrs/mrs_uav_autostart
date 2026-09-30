@@ -100,6 +100,11 @@ private:
   std::atomic<bool> uav_state_valid_ever_ = false;
   std::mutex        mutex_uav_state_;
 
+  // Armed at our first valid reading: we did not see the arming, so the UAV may already be in mid air, where the
+  // state can't tell (manual flight reads as ARMED). We still proceed normally, but never disarm such a UAV --
+  // on the ground, the autopilot's own pre-takeoff auto-disarm covers it.
+  std::atomic<bool> started_armed_ = false;
+
   // first time all DiagnosticsManager data was available; the arm-to-output timeout never counts time before it
   rclcpp::Time data_ready_time_;
 
@@ -305,6 +310,9 @@ void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr
 
   // latch + update the confirmed-state trackers, skipping ambiguous UNKNOWN/LINK_LOST readings
   if (state != mrs_msgs::msg::State::STATE_LINK_LOST && state != mrs_msgs::msg::State::STATE_UNKNOWN) {
+    if (!uav_state_valid_ever_) {
+      started_armed_ = is_armed;
+    }
     uav_state_valid_ever_    = true;
     last_confirmed_armed_    = is_armed;
     last_confirmed_offboard_ = is_offboard;
@@ -444,10 +452,16 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
       if (!we_toggled_output_ && time_waiting > _arm_to_output_timeout_) {
 
-        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _arm_to_output_timeout_);
-        co_await disarm();
-        co_await changeState(STATE_FINISHED);
-        co_return;
+        if (started_armed_) {
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
+                               "could not set control output ON for %.2f secs, but the UAV was already armed when automatic start came up, not disarming",
+                               _arm_to_output_timeout_);
+        } else {
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _arm_to_output_timeout_);
+          co_await disarm();
+          co_await changeState(STATE_FINISHED);
+          co_return;
+        }
       }
     }
 
