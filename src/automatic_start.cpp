@@ -268,29 +268,29 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   param_loader.loadParam("uav_name", _uav_name_);
   param_loader.loadParam("simulation", _simulation_);
 
-  param_loader.loadParam("main_timer_rate", _main_timer_rate_);
-  param_loader.loadParam("body_frame_name", _body_frame_name_);
-  param_loader.loadParam("control_output_timeout", _control_output_timeout_);
+  param_loader.loadParam("mrs_uav_autostart/main_timer_rate", _main_timer_rate_);
+  param_loader.loadParam("mrs_uav_autostart/body_frame_name", _body_frame_name_);
+  param_loader.loadParam("mrs_uav_autostart/control_output_timeout", _control_output_timeout_);
 
-  param_loader.loadParam("safety_timeout", _safety_timeout_);
-  param_loader.loadParam("pre_takeoff_sleep", _pre_takeoff_sleep_);
+  param_loader.loadParam("mrs_uav_autostart/safety_timeout", _safety_timeout_);
+  param_loader.loadParam("mrs_uav_autostart/pre_takeoff_sleep", _pre_takeoff_sleep_);
 
-  param_loader.loadParam("handle_takeoff", _handle_takeoff_);
+  param_loader.loadParam("mrs_uav_autostart/handle_takeoff", _handle_takeoff_);
 
-  param_loader.loadParam("preflight_check/time_window", _preflight_check_time_window_);
+  param_loader.loadParam("mrs_uav_autostart/preflight_check/time_window", _preflight_check_time_window_);
 
-  param_loader.loadParam("preflight_check/speed_check/enabled", _speed_check_enabled_);
-  param_loader.loadParam("preflight_check/speed_check/max_speed", _speed_check_max_speed_);
+  param_loader.loadParam("mrs_uav_autostart/preflight_check/speed_check/enabled", _speed_check_enabled_);
+  param_loader.loadParam("mrs_uav_autostart/preflight_check/speed_check/max_speed", _speed_check_max_speed_);
 
-  param_loader.loadParam("preflight_check/height_check/enabled", _height_check_enabled_);
-  param_loader.loadParam("preflight_check/height_check/max_height", _height_check_max_height_);
+  param_loader.loadParam("mrs_uav_autostart/preflight_check/height_check/enabled", _height_check_enabled_);
+  param_loader.loadParam("mrs_uav_autostart/preflight_check/height_check/max_height", _height_check_max_height_);
 
-  param_loader.loadParam("preflight_check/gyro_check/enabled", _gyro_check_enabled_);
-  param_loader.loadParam("preflight_check/gyro_check/max_rate", _gyro_check_max_rate_);
+  param_loader.loadParam("mrs_uav_autostart/preflight_check/gyro_check/enabled", _gyro_check_enabled_);
+  param_loader.loadParam("mrs_uav_autostart/preflight_check/gyro_check/max_rate", _gyro_check_max_rate_);
 
-  param_loader.loadParam("preflight_check/topic_check/enabled", _topic_check_enabled_);
-  param_loader.loadParam("preflight_check/topic_check/timeout", _topic_check_timeout_);
-  param_loader.loadParam("preflight_check/topic_check/topics", _topic_check_topic_names_);
+  param_loader.loadParam("mrs_uav_autostart/preflight_check/topic_check/enabled", _topic_check_enabled_);
+  param_loader.loadParam("mrs_uav_autostart/preflight_check/topic_check/timeout", _topic_check_timeout_);
+  param_loader.loadParam("mrs_uav_autostart/preflight_check/topic_check/topics", _topic_check_topic_names_);
 
   if (!param_loader.loadedSuccessfully()) {
     RCLCPP_ERROR(this_node().get_logger(), "Could not load all parameters!");
