@@ -40,6 +40,19 @@ bool Tester::test(void) {
     }
   }
 
+  // automatic start never enabled the output, so after arm_to_output_timeout it must disarm the UAV it saw being armed
+  const rclcpp::Time disarm_wait_start = clock_->now();
+
+  while (uh_->isArmed()) {
+
+    if (!rclcpp::ok() || (clock_->now() - disarm_wait_start).seconds() > 5.0) {
+      RCLCPP_ERROR(node_->get_logger(), "automatic start did not disarm the UAV after the output timeout");
+      return false;
+    }
+
+    sleep(0.1);
+  }
+
   return true;
 }
 
