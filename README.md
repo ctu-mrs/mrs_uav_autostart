@@ -67,7 +67,7 @@ stateDiagram-v2
 
 Notes:
 
-1. **Already flying**: `uav_state` is `TAKEOFF`, `HOVER`, `GOTO`, `TRAJECTORY`, `LAND` or `RC_MODE` — someone else started the flight (e.g. the node was restarted mid-air). Finishes without touching output, arming or takeoff. `MANUAL` no longer counts as already flying — see `ManualPause` below instead.
+1. **Already flying**: `uav_state` is `TAKEOFF`, `HOVER`, `GOTO`, `TRAJECTORY`, `LAND`, `RC_MODE` or `MIDAIR_ACTIVATION` — someone else started the flight (e.g. the node was restarted mid-air, or MRS is taking over a UAV already in the air). Finishes without touching output, arming or takeoff. `MANUAL` no longer counts as already flying — see `ManualPause` below instead.
 2. **Possibly in the air**: not OFFBOARD, a preflight speed / height / gyro check failed, and the UAV is armed. Turns control output OFF if automatic start turned it ON, then finishes. While **not armed** it only warns and keeps waiting. This check can't fire during a `ManualPause` (the pause returns first), and the `Settling` wait (note 7) keeps it from firing right after a resume.
 3. **Output not ON in time**: control output not ON within `arm_to_output_timeout` (1.5 s) after arming (or after the data became available) → disarm and finish. Not if the UAV was already armed when automatic start came up: then it only warns and keeps waiting.
 4. **`MANUAL`**: the pilot (or the autopilot itself) is flying without offboard. Control output is forced OFF for the whole pause so MRS can't take over once OFFBOARD reappears (it would find no setpoints). `Disarmed` can't reach `ManualPause`: `uav_state == MANUAL` requires the UAV to be armed.
@@ -88,6 +88,7 @@ Notes:
 |---|---|
 | `WAITING_FOR_DATA` → `IDLE` | `errorgraph_clears_after_startup` (waiting-for-DiagnosticsManager error reported, then cleared) |
 | `IDLE` → `FINISHED`: already flying | `already_flying_should_finish` |
+| `ManualPause` → `FINISHED`: already flying (`MIDAIR_ACTIVATION`), output ON by UavManager left alone | `midair_activation_should_finish` |
 | `Disarmed` → `ArmedOutputOff` → `ArmedOutputOn` | `takeoff_should_succeed` |
 | `ArmedOutputOff`/`On` → `Disarmed`: disarmed (outside a `MANUAL` pause) | **no test** |
 | `ArmedOutputOff` stays: `topics_ok` false | `takeoff_should_fail_topic_check` (output never ON, takeoff fails) |
