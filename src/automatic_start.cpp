@@ -126,14 +126,14 @@ private:
   // a tracker (or a pilot) is already flying the UAV, so there is nothing left for us to start
   bool flying_ = false;
 
-  // last confirmed armed/offboard reading, so a transient UNKNOWN/LINK_LOST gap can't reset the timers
+  // last confirmed armed/offboard reading, so a transient UNKNOWN/NO_LINK gap can't reset the timers
   bool last_confirmed_armed_    = false;
   bool last_confirmed_offboard_ = false;
 
   // MANUAL: armed, not offboard, the autopilot reports in-air -- it flies the UAV without offboard
   bool manual_ = false;
 
-  // explicit STATE_DISARMED only; LINK_LOST/UNKNOWN are not a disarm
+  // explicit STATE_DISARMED only; NO_LINK/UNKNOWN are not a disarm
   bool disarmed_ = false;
 
   bool we_toggled_output_ = false;
@@ -304,9 +304,9 @@ void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr
 
   const uint8_t state = msg->state;
 
-  // DISARMED/LINK_LOST/UNKNOWN mean "not confidently armed"
+  // DISARMED/NO_LINK/UNKNOWN mean "not confidently armed"
   const bool is_armed =
-      !(state == mrs_msgs::msg::State::STATE_DISARMED || state == mrs_msgs::msg::State::STATE_LINK_LOST || state == mrs_msgs::msg::State::STATE_UNKNOWN);
+      !(state == mrs_msgs::msg::State::STATE_DISARMED || state == mrs_msgs::msg::State::STATE_NO_LINK || state == mrs_msgs::msg::State::STATE_UNKNOWN);
 
   // STATE_OFFBOARD means armed + offboard link, no tracker active yet -- i.e. on the ground.
   // Any other flying state must count as not offboard, so timerMain()'s possibly_in_the_air guard catches it.
@@ -327,12 +327,12 @@ void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr
   offboard_ = is_offboard;
   flying_   = state == mrs_msgs::msg::State::STATE_TAKEOFF || state == mrs_msgs::msg::State::STATE_HOVER || state == mrs_msgs::msg::State::STATE_GOTO ||
             state == mrs_msgs::msg::State::STATE_TRAJECTORY || state == mrs_msgs::msg::State::STATE_LAND || state == mrs_msgs::msg::State::STATE_RC_MODE ||
-            state == mrs_msgs::msg::State::STATE_MIDAIR_ACTIVATION;
+            state == mrs_msgs::msg::State::STATE_MIDAIR;
   manual_   = state == mrs_msgs::msg::State::STATE_MANUAL;
   disarmed_ = state == mrs_msgs::msg::State::STATE_DISARMED;
 
-  // latch + update the confirmed-state trackers, skipping ambiguous UNKNOWN/LINK_LOST readings
-  if (state != mrs_msgs::msg::State::STATE_LINK_LOST && state != mrs_msgs::msg::State::STATE_UNKNOWN) {
+  // latch + update the confirmed-state trackers, skipping ambiguous UNKNOWN/NO_LINK readings
+  if (state != mrs_msgs::msg::State::STATE_NO_LINK && state != mrs_msgs::msg::State::STATE_UNKNOWN) {
     if (!uav_state_valid_ever_) {
       started_armed_ = is_armed;
     }
@@ -459,12 +459,12 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
         paused_output_off_ = false;
 
       } else if (!armed) {
-        // LINK_LOST / UNKNOWN: neither a disarm nor a landing -- stay paused; the UAV may still be flying manually, so a
+        // NO_LINK / UNKNOWN: neither a disarm nor a landing -- stay paused; the UAV may still be flying manually, so a
         // long blind pause counts towards the MANUAL duration as well
         if ((clock_->now() - manual_since_).seconds() >= _manual_abort_max_duration_) {
           needs_rearm_ = true;
         }
-        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "paused, UAV state not confirmed (LINK_LOST/UNKNOWN)");
+        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "paused, UAV state not confirmed (NO_LINK to the autopilot, or UNKNOWN)");
         armed_stable_since_ = rclcpp::Time(0, 0, clock_->get_clock_type());
         co_return;
 

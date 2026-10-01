@@ -100,10 +100,10 @@ bool Tester::test(void) {
 
   sleep(7.0); // MANUAL longer than manual_abort_max_duration (5 s) -> a real flight
 
-  state = mrs_msgs::msg::State::STATE_LINK_LOST; // link loss is not a disarm: must keep the pause and the rearm requirement
+  state = mrs_msgs::msg::State::STATE_NO_LINK; // link loss is not a disarm: must keep the pause and the rearm requirement
   sleep(2.0);
   if (output_enabled || disarm_calls > 0 || takeoff_calls > 0) {
-    return fail("automatic_start resumed / disarmed / took off during LINK_LOST after a real flight");
+    return fail("automatic_start resumed / disarmed / took off during NO_LINK after a real flight");
   }
 
   state = mrs_msgs::msg::State::STATE_ARMED; // landed, still armed
@@ -123,7 +123,7 @@ bool Tester::test(void) {
     return fail("automatic_start did not start fresh after disarm -> arm");
   }
 
-  // a short MANUAL followed by a long LINK_LOST: the pilot may have flown blind, so it still needs disarm -> arm
+  // a short MANUAL followed by a long NO_LINK: the pilot may have flown blind, so it still needs disarm -> arm
   const int on_calls_before_blind = output_on_calls;
 
   state = mrs_msgs::msg::State::STATE_MANUAL;
@@ -132,13 +132,13 @@ bool Tester::test(void) {
   }
   sleep(1.5); // MANUAL ~2 s in total, shorter than manual_abort_max_duration
 
-  state = mrs_msgs::msg::State::STATE_LINK_LOST;
-  sleep(5.5); // MANUAL + LINK_LOST together longer than manual_abort_max_duration
+  state = mrs_msgs::msg::State::STATE_NO_LINK;
+  sleep(5.5); // MANUAL + NO_LINK together longer than manual_abort_max_duration
 
   state = mrs_msgs::msg::State::STATE_ARMED;
   sleep(3.0);
   if (output_enabled || output_on_calls != on_calls_before_blind) {
-    return fail("automatic_start resumed after a short MANUAL followed by a long LINK_LOST");
+    return fail("automatic_start resumed after a short MANUAL followed by a long NO_LINK");
   }
 
   return disarm_calls == 0 && takeoff_calls == 0 ? true : fail("unexpected disarm / takeoff");
