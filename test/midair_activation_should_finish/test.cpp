@@ -105,8 +105,8 @@ bool Tester::test(void) {
   output_enabled = true;
   sleep(0.5); // still MANUAL with output ON: automatic start must only warn, not turn it OFF
 
-  // stays MIDAIR_ACTIVATION to the end: test.py's "already flying" check must come from this state, not a later HOVER
-  state = mrs_msgs::msg::State::STATE_MIDAIR_ACTIVATION;
+  // stays MIDAIR to the end: test.py's "already flying" check must come from this state, not a later HOVER
+  state = mrs_msgs::msg::State::STATE_MIDAIR;
   sleep(3.0);
 
   if (!output_enabled || output_off_calls != off_calls_before_activation) {
