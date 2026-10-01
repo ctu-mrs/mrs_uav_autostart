@@ -90,9 +90,9 @@ Notes:
 | `IDLE` → `FINISHED`: already flying | `already_flying_should_finish` |
 | `ManualPause` → `FINISHED`: already flying (`MIDAIR`), output ON by UavManager left alone | `midair_activation_should_finish` |
 | `Disarmed` → `ArmedOutputOff` → `ArmedOutputOn` | `takeoff_should_succeed` |
-| `ArmedOutputOff`/`On` → `Disarmed`: disarmed (outside a `MANUAL` pause) | **no test** |
-| `ArmedOutputOff` stays: `topics_ok` false | `topic_check_failure_should_disarm` (output never ON, takeoff fails) |
-| `ArmedOutputOff` stays: position outside the safety area | `outside_safety_area_should_disarm` (output never ON, takeoff fails) |
+| `ArmedOutputOff`/`On` → `Disarmed`: disarmed (outside a `MANUAL` pause) | `disarm_should_start_over` (disarmed with output ON, then a normal takeoff after arming again) |
+| `ArmedOutputOff` stays: `topics_ok` false | `topic_check_failure_should_disarm` (output never ON, takeoff fails, disarmed) |
+| `ArmedOutputOff` stays: position outside the safety area | `outside_safety_area_should_disarm` (output never ON, takeoff fails, disarmed) |
 | `ArmedOutputOff`/`On` → `FINISHED`: possibly in the air + armed | `takeoff_should_fail_while_moving` |
 | Already armed at startup: output ON, takeoff | `started_armed_should_take_off` |
 | Already armed at startup: no disarm on the arm-to-output timeout | `started_armed_should_not_disarm` |
@@ -107,8 +107,7 @@ Notes:
 | `Pausing`/`Settling`/`Unconfirmed` → `Disarmed`: `STATE_DISARMED` during a short pause | **no test** |
 | `Pausing` → `Settling`: `MANUAL` ends before 5 s | `short_manual_should_resume` |
 | `Settling` → resume (armed stable 1 s) → `ArmedOutputOff`/`On` → `Countdown` (restarted, no takeoff for the first 3 s) → `TAKEOFF` | `short_manual_should_resume` |
-| `ArmedOutputOff` → `FINISHED`: arm-to-output timeout → disarm | **no test asserts the disarm** (the two `takeoff_should_fail_*` tests only assert that the takeoff fails) |
+| `ArmedOutputOff` → `FINISHED`: arm-to-output timeout → disarm | `outside_safety_area_should_disarm`, `topic_check_failure_should_disarm` |
 | `Countdown` → `ArmedOutputOn`: OFFBOARD abort *without* `MANUAL`, then retry | **no test** (`short_manual_should_resume` covers the `MANUAL`-abort path above instead, which is what PX4 actually reports) |
 | `Settling` → `Settling`: stays because speed/height/gyro not ok | **no test** (`short_manual_should_resume`'s mock always reports the heuristics as ok) |
-| `TAKEOFF` → `FINISHED`: takeoff service failed | **no test** |
-| Disarm refused while in OFFBOARD | **no test** |
+| `TAKEOFF` → `FINISHED`: takeoff service failed | `takeoff_failure_should_finish` |
