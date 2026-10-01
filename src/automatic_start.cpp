@@ -327,7 +327,8 @@ void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr
   offboard_ = is_offboard;
   flying_   = state == mrs_msgs::msg::State::STATE_TAKEOFF || state == mrs_msgs::msg::State::STATE_HOVER || state == mrs_msgs::msg::State::STATE_GOTO ||
             state == mrs_msgs::msg::State::STATE_TRAJECTORY || state == mrs_msgs::msg::State::STATE_LAND || state == mrs_msgs::msg::State::STATE_RC_MODE ||
-            state == mrs_msgs::msg::State::STATE_MIDAIR;
+            state == mrs_msgs::msg::State::STATE_MIDAIR || state == mrs_msgs::msg::State::STATE_EHOVER || state == mrs_msgs::msg::State::STATE_ELAND ||
+            state == mrs_msgs::msg::State::STATE_FAILSAFE;
   manual_   = state == mrs_msgs::msg::State::STATE_MANUAL;
   disarmed_ = state == mrs_msgs::msg::State::STATE_DISARMED;
 
