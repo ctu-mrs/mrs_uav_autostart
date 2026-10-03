@@ -1,0 +1,20 @@
+mrs_uav_managers:
+
+  estimation_manager:
+    state_estimators: [
+      "gps_garmin",
+    ]
+    initial_state_estimator: "gps_garmin"
+    agl_height_estimator: "garmin_agl"
+
+mrs_uav_autostart:
+
+  preflight_check:
+
+    topic_check:
+
+      topics: [
+        "estimation_manager/uav_state:mrs_msgs/msg/UavState",
+        "control_manager/diagnostics:mrs_msgs/msg/ControlManagerDiagnostics",
+        "some_topic_that_does_not_exist:nav_msgs/msg/Odometry",
+      ]

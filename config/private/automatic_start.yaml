@@ -1,6 +1,6 @@
-main_timer_rate: 30.0 # [Hz]
+mrs_uav_autostart:
 
-# body fram of the UAV
-body_frame_name: "fcu"
+  main_timer_rate: 30.0 # [Hz]
 
-control_output_timeout: 1.5 # [s]
+  # disarm if control output could not be enabled within this time after arming
+  arm_to_output_timeout: 1.5 # [s]
