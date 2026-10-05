@@ -7,7 +7,8 @@ import launch
 import launch_ros
 import launch_testing.actions
 import launch_testing.asserts
-from launch.actions import IncludeLaunchDescription, GroupAction, SetEnvironmentVariable
+from launch.actions import IncludeLaunchDescription, GroupAction, SetEnvironmentVariable, RegisterEventHandler
+from launch.event_handlers import OnProcessIO
 import rclpy
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution, TextSubstitution
@@ -53,9 +54,11 @@ def generate_test_description():
                         ])
                     ]),
                     launch_arguments={
-                        'run_automatic_start': "true",
+                        'run_automatic_start': "false",
                         'uav_name': uav_name,
                         'platform_config': platform_config,
+                        # 'world_config': launch_dir+"/config/world_config.yaml",
+                        # 'custom_config': launch_dir+"/config/custom_config.yaml",
                     }.items()
                 )
             ]
@@ -90,24 +93,56 @@ def generate_test_description():
                             'hw_api.launch.py'
                         ])
                     ]),
+                    # launch_arguments={
+                    #     'custom_config': launch_dir+"/config/hw_api.yaml",
+                    # }.items()
                 )
             ]
         )
     )
 
     # starts the integration interactor
-    ld.add_action(
-            launch_ros.actions.Node(
-                package='mrs_uav_autostart',
-                namespace='',
-                executable='test_'+test_name,
-                name='test_'+test_name,
-                output="screen",
-                parameters=[
-                        {'test_name': test_name},
-                ],
-            )
+    test_node = launch_ros.actions.Node(
+        package='mrs_uav_autostart',
+        namespace='',
+        executable='test_'+test_name,
+        name='test_'+test_name,
+        output="screen",
+        parameters=[
+                {'test_name': test_name},
+        ],
+    )
+
+    ld.add_action(test_node)
+
+    # automatic start comes up only after the test node has armed the UAV and asks for it
+    automatic_start = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('mrs_uav_autostart'),
+                'launch',
+                'automatic_start.launch.py'
+                ])
+            ]),
+            launch_arguments={
+                'uav_name': uav_name,
+                'use_sim_time': "true",
+            }.items()
         )
+
+    started = []
+
+    def start_automatic_start(event):
+        if started or b"START_AUTOMATIC_START" not in event.text:
+            return None
+        started.append(True)
+        return [automatic_start]
+
+    ld.add_action(
+        RegisterEventHandler(
+            OnProcessIO(target_action=test_node, on_stdout=start_automatic_start)
+        )
+    )
 
     # starts the python test part down below
     ld.add_action(
@@ -116,6 +151,8 @@ def generate_test_description():
         )
 
     return ld
+
+# #{ class PublisherHandlerTest(unittest.TestCase)
 
 class PublisherHandlerTest(unittest.TestCase):
 
@@ -161,5 +198,20 @@ class PublisherHandlerTest(unittest.TestCase):
             # check if the result is true
             self.assertTrue(test_result[0].data)
 
+            # automatic start actually ran and recognized the flight
+            proc_output.assertWaitFor("the UAV is already flying, nothing to start", timeout=5)
+
         finally:
             self.node.destroy_subscription(sub)
+
+# #} end of
+
+# #{ Post-shutdown tests
+
+# @launch_testing.post_shutdown_test()
+# class PublisherHandlerTestShutdown(unittest.TestCase):
+#     def test_exit_codes(self, proc_info):
+#         """Check if the processes exited normally."""
+#         launch_testing.asserts.assertExitCodes(proc_info)
+
+# #} end of Post-shutdown tests

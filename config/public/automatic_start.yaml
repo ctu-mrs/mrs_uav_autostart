@@ -4,44 +4,12 @@ mrs_uav_autostart:
   # While it is counting down, the takeoff can be aborted by switching off the offboard mode.
   takeoff_countdown: 5.0 # [s]
 
+  # MANUAL (PX4 flies the UAV without offboard) pauses automatic start with control output OFF.
+  # Shorter than this, it is treated as an aborted OFFBOARD on the ground (the pilot lowered the sticks and PX4
+  # detected the landing): automatic start resumes. Longer, it is a real flight: disarm and arm again to start over.
+  manual_abort_max_duration: 5.0 # [s]
+
   # true: trigger the takeoff (uav_manager/takeoff) once the countdown elapses
   # false: perform all checks and enable control output, but leave calling
   #        uav_manager/takeoff to someone else
   trigger_takeoff: true
-
-  preflight_check:
-
-    # all the conditions must be met for the last <time_window> seconds
-    time_window: 5.0 # [s]
-
-    # takeoff not allowed if UAV's speed exceeds <max_speed>
-    speed_check:
-
-      enabled: true
-      max_speed: 0.3 # [m/s]
-
-    # takeoff not allowed if UAV's height sensor exceeds <max_height>
-    height_check:
-
-      enabled: true
-      max_height: 0.8 # [m]
-
-    # takeoff not allowed if UAV's gyro report motion
-    gyro_check:
-
-      enabled: true
-      max_rate: 1.0 # [rad/s]
-
-    # the node will wait for the following topics and won't allow
-    # takeoff until some data apear on them
-    topic_check:
-
-      enabled: true
-      timeout: 5.0 # [s], allowed timeout for the last accepted message
-
-      # if "/" is provided at the beginning of topic_name, the topic name is considered as written,
-      # if there is no "/" at the beginning, UAV_NAME is automatically added in front of the topic name (e.g., /uav1/topic_name)
-      topics: [
-        "estimation_manager/uav_state:mrs_msgs/msg/UavState",
-        "control_manager/diagnostics:mrs_msgs/msg/ControlManagerDiagnostics",
-      ]
