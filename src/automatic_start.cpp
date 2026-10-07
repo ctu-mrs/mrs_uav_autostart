@@ -136,6 +136,9 @@ private:
   // explicit STATE_DISARMED only; NO_LINK/UNKNOWN are not a disarm
   bool disarmed_ = false;
 
+  // the takeoff can no longer finish: MRS lost the UAV, or ControlManager switched to an emergency or landing
+  bool takeoff_interrupted_ = false;
+
   bool we_toggled_output_ = false;
 
   // | ------------------ MANUAL pause (timer-owned) ----------------- |
@@ -146,6 +149,8 @@ private:
   rclcpp::Time manual_since_;
   rclcpp::Time armed_stable_since_;
   rclcpp::Time resume_time_;
+
+  rclcpp::Time takeoff_time_;
 
   // | ------------------------ routines ------------------------ |
 
@@ -165,6 +170,7 @@ private:
   double _takeoff_countdown_;
   double _manual_abort_max_duration_;
   double _arm_to_output_timeout_;
+  double _takeoff_timeout_;
   double _diagnostics_manager_timeout_;
 
   // | ---------------------- state machine --------------------- |
@@ -196,6 +202,7 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   manual_since_       = rclcpp::Time(0, 0, clock_->get_clock_type());
   armed_stable_since_ = rclcpp::Time(0, 0, clock_->get_clock_type());
   resume_time_        = rclcpp::Time(0, 0, clock_->get_clock_type());
+  takeoff_time_       = rclcpp::Time(0, 0, clock_->get_clock_type());
 
   mrs_lib::ParamLoader param_loader(node_, "AutomaticStart");
 
@@ -228,6 +235,7 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   param_loader.loadParam("mrs_uav_autostart/main_timer_rate", _main_timer_rate_);
   param_loader.loadParam("mrs_uav_autostart/arm_to_output_timeout", _arm_to_output_timeout_);
+  param_loader.loadParam("mrs_uav_autostart/takeoff_timeout", _takeoff_timeout_);
   param_loader.loadParam("mrs_uav_autostart/diagnostics_manager_timeout", _diagnostics_manager_timeout_);
 
   param_loader.loadParam("mrs_uav_autostart/takeoff_countdown", _takeoff_countdown_);
@@ -332,6 +340,12 @@ void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr
   manual_   = state == mrs_msgs::msg::State::STATE_MANUAL;
   disarmed_ = state == mrs_msgs::msg::State::STATE_DISARMED;
 
+  // OFFBOARD may still lag right after the takeoff call; NO_LINK/UNKNOWN are ambiguous
+  takeoff_interrupted_ = state == mrs_msgs::msg::State::STATE_DISARMED || state == mrs_msgs::msg::State::STATE_ARMED ||
+                         state == mrs_msgs::msg::State::STATE_MANUAL || state == mrs_msgs::msg::State::STATE_LAND ||
+                         state == mrs_msgs::msg::State::STATE_EHOVER || state == mrs_msgs::msg::State::STATE_ELAND ||
+                         state == mrs_msgs::msg::State::STATE_FAILSAFE;
+
   // latch + update the confirmed-state trackers, skipping ambiguous UNKNOWN/NO_LINK readings
   if (state != mrs_msgs::msg::State::STATE_NO_LINK && state != mrs_msgs::msg::State::STATE_UNKNOWN) {
     if (!uav_state_valid_ever_) {
@@ -406,8 +420,8 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
     data_ready_time_ = clock_->now();
   }
 
-  auto [armed, offboard, flying, manual, disarmed, armed_time, offboard_time] =
-      mrs_lib::get_mutexed(mutex_uav_state_, armed_, offboard_, flying_, manual_, disarmed_, armed_time_, offboard_time_);
+  auto [armed, offboard, flying, manual, disarmed, takeoff_interrupted, armed_time, offboard_time] =
+      mrs_lib::get_mutexed(mutex_uav_state_, armed_, offboard_, flying_, manual_, disarmed_, takeoff_interrupted_, armed_time_, offboard_time_);
   auto control_info = sh_control_info_.getMsg();
 
   switch (current_state_) {
@@ -617,6 +631,18 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
       co_await changeState(STATE_FINISHED);
 
+    } else if (takeoff_interrupted) {
+
+      RCLCPP_WARN(node_->get_logger(), "the takeoff was interrupted, nothing left to wait for");
+
+      co_await changeState(STATE_FINISHED);
+
+    } else if ((clock_->now() - takeoff_time_).seconds() > _takeoff_timeout_) {
+
+      RCLCPP_WARN(node_->get_logger(), "the takeoff did not finish within %.0f s, giving up waiting for it", _takeoff_timeout_);
+
+      co_await changeState(STATE_FINISHED);
+
     } else {
 
       RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "waiting for the takeoff to finish");
@@ -665,6 +691,8 @@ mrs_lib::Task<> AutomaticStart::changeState(AutostartState_t new_state) {
 
       co_return;
     }
+
+    takeoff_time_ = clock_->now();
 
     break;
   }
