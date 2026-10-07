@@ -61,6 +61,8 @@ stateDiagram-v2
   Countdown --> FINISHED: trigger_takeoff = false<br/>(takeoff left to someone else)
   TAKEOFF --> FINISHED: flying normally
   TAKEOFF --> FINISHED: takeoff service failed
+  TAKEOFF --> FINISHED: takeoff interrupted<br/>(DISARMED, ARMED, MANUAL, LAND, EHOVER, ELAND, FAILSAFE)
+  TAKEOFF --> FINISHED: not flying normally within takeoff_timeout (60 s)
 
   FINISHED --> [*]: timer stopped, automatic start does nothing more
 ```
@@ -111,3 +113,5 @@ Notes:
 | `Countdown` → `ArmedOutputOn`: OFFBOARD abort *without* `MANUAL`, then retry | **no test** (`short_manual_should_resume` covers the `MANUAL`-abort path above instead, which is what PX4 actually reports) |
 | `Settling` → `Settling`: stays because speed/height/gyro not ok | **no test** (`short_manual_should_resume`'s mock always reports the heuristics as ok) |
 | `TAKEOFF` → `FINISHED`: takeoff service failed | `takeoff_failure_should_finish` |
+| `TAKEOFF` → `FINISHED`: takeoff interrupted (`MANUAL`), nothing touched on the way out | `takeoff_interrupted_should_finish` |
+| `TAKEOFF` → `FINISHED`: `takeoff_timeout`, nothing touched on the way out | `takeoff_timeout_should_finish` |
