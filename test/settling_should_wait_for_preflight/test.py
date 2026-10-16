@@ -127,7 +127,7 @@ class PublisherHandlerTest(unittest.TestCase):
             proc_output.assertWaitFor("MANUAL was short (aborted OFFBOARD), resuming", timeout=5)
 
             # automatic start actually ran and recognized the situation
-            proc_output.assertWaitFor("switching states IDLE -> TAKEOFF", timeout=5)
+            proc_output.assertWaitFor("switching states COUNTDOWN -> TAKEOFF", timeout=5)
 
         finally:
             self.node.destroy_subscription(sub)

@@ -51,15 +51,50 @@ namespace mrs_uav_autostart
 
 /* class AutomaticStart //{ */
 
-// state machine
+// ControlInfo shows an accepted control output ON only a moment later; until then the call is not repeated
+constexpr double OUTPUT_ON_RETRY_PERIOD_S = 1.0;
+
+// after a short MANUAL, the UAV must stay armed (and settled) this long before automatic start resumes
+constexpr double ARMED_STABLE_BEFORE_RESUME_S = 1.0;
+
+// state machine, see README.md
 enum AutostartState_t
 {
-  STATE_IDLE,
+  STATE_WAITING_FOR_ARM,
+  STATE_WAITING_FOR_OUTPUT,
+  STATE_WAITING_FOR_OFFBOARD,
+  STATE_COUNTDOWN,
+  STATE_MANUAL_PAUSE,
   STATE_TAKEOFF,
   STATE_FINISHED
 };
 
-constexpr std::array<const char *, 3> state_names = {"IDLE", "TAKEOFF", "FINISHED"};
+constexpr std::array<const char *, 7> state_names = {"WAITING_FOR_ARM", "WAITING_FOR_OUTPUT", "WAITING_FOR_OFFBOARD", "COUNTDOWN", "MANUAL_PAUSE", "TAKEOFF",
+                                                     "FINISHED"};
+
+// the steps of STATE_MANUAL_PAUSE
+enum PauseStep_t
+{
+  PAUSE_IN_MANUAL,
+  PAUSE_SETTLING,
+  PAUSE_UNCONFIRMED,
+  PAUSE_NEEDS_REARM
+};
+
+constexpr std::array<const char *, 4> pause_step_names = {"IN_MANUAL", "SETTLING", "UNCONFIRMED", "NEEDS_REARM"};
+
+// the UAV as one tick of timerMain() sees it, taken once at its start; the uav_state part is written by
+// callbackUavState() and copied under its mutex, everything the timer owns stays in members
+struct UavSnapshot
+{
+  uint8_t                        state;
+  bool                           armed;
+  bool                           offboard;
+  bool                           control_output_enabled;
+  bool                           flying_normally;
+  mrs_msgs::msg::PreflightStatus preflight;
+  rclcpp::Time                   offboard_since;
+};
 
 class AutomaticStart : public mrs_lib::Node {
 
@@ -103,9 +138,8 @@ private:
 
   std::shared_ptr<TimerType> timer_main_;
   mrs_lib::Task<>            timerMain();
+  UavSnapshot                takeUavSnapshot();
   double                     _main_timer_rate_;
-
-  bool dataReady();
 
   // | ------------------------ uav state ----------------------- |
 
@@ -135,51 +169,55 @@ private:
   // latest reading, mrs_msgs::msg::State::STATE_*
   uint8_t uav_state_ = State::STATE_UNKNOWN;
 
-  rclcpp::Time armed_since_;
   rclcpp::Time offboard_since_;
 
-  // last confirmed armed/offboard reading, so a transient UNKNOWN/NO_LINK gap can't reset the timers
-  bool last_confirmed_armed_    = false;
+  // last confirmed offboard reading, so a transient UNKNOWN/NO_LINK gap can't restart the countdown
   bool last_confirmed_offboard_ = false;
 
   bool we_turned_output_on_ = false;
 
+  // when toggle_output last accepted our ON, unset after a refusal; see OUTPUT_ON_RETRY_PERIOD_S
+  rclcpp::Time output_on_time_;
+
   // | ------------------ MANUAL pause (timer-owned) ----------------- |
 
-  bool         manual_pause_                  = false;
-  bool         needs_rearm_                   = false;
+  PauseStep_t  pause_step_                    = PAUSE_IN_MANUAL;
   bool         we_turned_output_off_in_pause_ = false; // we turned the output OFF during this pause (ControlInfo may still lag)
   rclcpp::Time manual_since_;
   rclcpp::Time armed_stable_since_;
-  rclcpp::Time resume_time_;
 
   rclcpp::Time takeoff_time_;
 
-  // | ------------------------ routines ------------------------ |
+  // | -------- global checks, before the state handlers -------- |
 
-  mrs_lib::Task<bool> handleManualPause(const uint8_t state, const mrs_msgs::msg::ControlInfo::ConstSharedPtr &control_info);
+  bool                checkDataReady();
+  bool                checkAlreadyFlying(const UavSnapshot &uav);
+  void                checkManual(const UavSnapshot &uav);
+  mrs_lib::Task<bool> checkPossiblyInTheAir(const UavSnapshot &uav);
 
-  mrs_lib::Task<bool> handlePossiblyInTheAir(const bool armed, const bool offboard, const mrs_msgs::msg::PreflightStatus &preflight);
+  // | --------------------- state handlers --------------------- |
 
-  mrs_lib::Task<bool> handleControlOutput(const uint8_t state, const bool control_output_enabled, const rclcpp::Time armed_since,
-                                          const mrs_msgs::msg::PreflightStatus &preflight);
+  void                stateWaitingForArm(const UavSnapshot &uav);
+  mrs_lib::Task<>     stateWaitingForOutput(const UavSnapshot &uav);
+  mrs_lib::Task<>     stateCountdown(const UavSnapshot &uav);
+  mrs_lib::Task<bool> stateManualPause(const UavSnapshot &uav);
+  void                stateTakeoff(const UavSnapshot &uav);
 
-  void handleTakeoff(const uint8_t state, const mrs_msgs::msg::ControlInfo::ConstSharedPtr &control_info);
+  // | ---------------------- service calls --------------------- |
 
-  mrs_lib::Task<> handleCountdown(const bool armed, const bool offboard, const bool control_output_enabled, const rclcpp::Time offboard_since);
+  mrs_lib::Task<bool> callTakeoff();
+  mrs_lib::Task<bool> callControlOutput(const bool enabled);
+  mrs_lib::Task<bool> callDisarm();
 
-  mrs_lib::Task<bool> takeoff();
-
-  mrs_lib::Task<bool> setControlOutput(const bool enabled);
-  mrs_lib::Task<bool> disarm();
+  // | ----------------------- simulation ----------------------- |
 
   bool isGazeboSimulation(void);
   bool spawnerReady(void);
-  bool hasObsoleteParams(const std::string &custom_config_path);
-
   bool is_gazebo_simulation_ = false;
 
-  // | ---------------------- other params ---------------------- |
+  // | ------------------------- params ------------------------- |
+
+  bool hasObsoleteParams(const std::string &custom_config_path);
 
   bool   _trigger_takeoff_ = false;
   double _takeoff_countdown_;
@@ -190,11 +228,14 @@ private:
 
   // | ---------------------- state machine --------------------- |
 
-  AutostartState_t current_state_ = STATE_IDLE;
+  AutostartState_t current_state_ = STATE_WAITING_FOR_ARM;
+  rclcpp::Time     state_since_; // when current_state_ was entered
   void             changeState(AutostartState_t new_state);
+  void             changePauseStep(PauseStep_t new_step);
 
-  void        finish(const std::string &reason);
-  std::string finish_reason_;
+  static AutostartState_t waitingState(const UavSnapshot &uav);
+
+  void finish(const std::string &reason);
 };
 
 //}

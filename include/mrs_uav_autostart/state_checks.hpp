@@ -3,6 +3,7 @@
 
 #include <cstdint>
 
+#include <mrs_msgs/msg/preflight_status.hpp>
 #include <mrs_msgs/msg/state.hpp>
 
 namespace mrs_uav_autostart
@@ -21,7 +22,7 @@ inline bool isArmed(const uint8_t state) {
 }
 
 // MRS (a tracker) is already flying the UAV, so there is nothing left for us to start
-// (MANUAL is not here: a pilot or the autopilot flies it without offboard, see AutomaticStart::handleManualPause())
+// (MANUAL is not here: a pilot or the autopilot flies it without offboard, see AutomaticStart::checkManual())
 inline bool isMrsFlying(const uint8_t state) {
   switch (state) {
   case State::STATE_TAKEOFF:
@@ -55,6 +56,11 @@ inline bool isTakeoffInterrupted(const uint8_t state) {
   default:
     return false;
   }
+}
+
+// DiagnosticsManager's speed/height/gyro heuristics; they lag behind a UAV that just moved
+inline bool isPossiblyInTheAir(const mrs_msgs::msg::PreflightStatus &preflight) {
+  return !(preflight.speed_ok && preflight.height_ok && preflight.gyro_ok);
 }
 
 // for the log

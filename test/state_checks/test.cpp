@@ -55,3 +55,18 @@ TEST(StateChecks, classifiesEveryState) {
     EXPECT_EQ(isTakeoffInterrupted(e.state), e.takeoff_interrupted);
   }
 }
+
+TEST(StateChecks, isPossiblyInTheAir) {
+
+  // on the ground only when all three heuristics agree
+  for (int mask = 0; mask < 8; mask++) {
+
+    mrs_msgs::msg::PreflightStatus preflight;
+    preflight.speed_ok  = mask & 1;
+    preflight.height_ok = mask & 2;
+    preflight.gyro_ok   = mask & 4;
+
+    EXPECT_EQ(isPossiblyInTheAir(preflight), mask != 7)
+        << "speed_ok=" << preflight.speed_ok << " height_ok=" << preflight.height_ok << " gyro_ok=" << preflight.gyro_ok;
+  }
+}

@@ -97,7 +97,7 @@ bool Tester::test(void) {
     return fail("automatic_start never enabled output after arming -- mock setup broken");
   }
 
-  // | ------------------------ IDLE stale ------------------------ |
+  // | ------------------ waiting states stale ------------------ |
 
   publish_general_robot_info = false;
   sleep(3.5); // longer than diagnostics_manager_timeout (3 s)
@@ -105,7 +105,7 @@ bool Tester::test(void) {
   state = mrs_msgs::msg::State::STATE_OFFBOARD; // the countdown must not run on stale data
   sleep(7.0);                                   // longer than takeoff_countdown (5 s)
   if (takeoff_calls > 0 || disarm_calls > 0 || output_off_calls > 0) {
-    return fail("automatic_start acted on the UAV while general_robot_info was stale (IDLE)");
+    return fail("automatic_start acted on the UAV while general_robot_info was stale (waiting for the takeoff)");
   }
 
   publish_general_robot_info = true; // DiagnosticsManager is back
