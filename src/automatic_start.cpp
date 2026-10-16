@@ -83,6 +83,8 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   param_loader.loadParam("mrs_uav_autostart/main_timer_rate", _main_timer_rate_);
   param_loader.loadParam("mrs_uav_autostart/arm_to_output_timeout", _arm_to_output_timeout_);
+  param_loader.loadParam("mrs_uav_autostart/output_on_confirm_timeout", _output_on_confirm_timeout_);
+  param_loader.loadParam("mrs_uav_autostart/manual_resume_delay", _manual_resume_delay_);
   param_loader.loadParam("mrs_uav_autostart/takeoff_timeout", _takeoff_timeout_);
   param_loader.loadParam("mrs_uav_autostart/diagnostics_manager_timeout", _diagnostics_manager_timeout_);
 
@@ -541,7 +543,7 @@ mrs_lib::Task<> AutomaticStart::stateWaitingForOutput(const Readings &readings) 
 
   if (readings.preflight.topics_ok && readings.preflight.position_valid) {
     // asking again before ControlInfo shows the accepted ON would just make ControlManager complain
-    if (!isSet(output_on_time_) || (clock_->now() - output_on_time_).seconds() >= OUTPUT_ON_RETRY_PERIOD_S) {
+    if (!isSet(output_on_time_) || (clock_->now() - output_on_time_).seconds() >= _output_on_confirm_timeout_) {
       if (co_await callControlOutput(true)) {
         we_turned_output_on_ = true;
         output_on_time_      = clock_->now();
@@ -674,7 +676,7 @@ mrs_lib::Task<bool> AutomaticStart::stateManualPause(const Readings &readings) {
     armed_stable_since_ = clock_->now();
   }
 
-  if ((clock_->now() - armed_stable_since_).seconds() < ARMED_STABLE_BEFORE_RESUME_S) {
+  if ((clock_->now() - armed_stable_since_).seconds() < _manual_resume_delay_) {
     co_return true;
   }
 
