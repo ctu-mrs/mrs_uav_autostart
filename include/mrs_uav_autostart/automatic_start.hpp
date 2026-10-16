@@ -6,8 +6,7 @@
  * spawner. See README.md for the state machine.
  */
 
-#ifndef MRS_UAV_AUTOSTART_AUTOMATIC_START_HPP
-#define MRS_UAV_AUTOSTART_AUTOMATIC_START_HPP
+#pragma once
 
 /* includes //{ */
 
@@ -241,5 +240,3 @@ private:
 //}
 
 } // namespace mrs_uav_autostart
-
-#endif // MRS_UAV_AUTOSTART_AUTOMATIC_START_HPP
