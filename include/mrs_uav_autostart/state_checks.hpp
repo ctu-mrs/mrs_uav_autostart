@@ -1,5 +1,5 @@
-#ifndef MRS_UAV_AUTOSTART_STATE_CHECKS_H
-#define MRS_UAV_AUTOSTART_STATE_CHECKS_H
+#ifndef MRS_UAV_AUTOSTART_STATE_CHECKS_HPP
+#define MRS_UAV_AUTOSTART_STATE_CHECKS_HPP
 
 #include <cstdint>
 
@@ -59,4 +59,4 @@ inline bool isTakeoffInterrupted(const uint8_t state) {
 
 } // namespace mrs_uav_autostart
 
-#endif // MRS_UAV_AUTOSTART_STATE_CHECKS_H
+#endif // MRS_UAV_AUTOSTART_STATE_CHECKS_HPP

@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-#include <mrs_uav_autostart/state_checks.h>
+#include <mrs_uav_autostart/state_checks.hpp>
 
 using namespace mrs_uav_autostart;
 

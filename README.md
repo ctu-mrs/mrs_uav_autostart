@@ -178,7 +178,7 @@ Notes:
 ### Transitions and the tests that cover them
 
 The simulation tests are in `test/<name>/`. How every `uav_state` is classified
-(`include/mrs_uav_autostart/state_checks.h`: confirmed, armed, flown by MRS, takeoff interrupted) is
+(`include/mrs_uav_autostart/state_checks.hpp`: confirmed, armed, flown by MRS, takeoff interrupted) is
 unit-tested in `test/state_checks`.
 
 | Transition                                                                                                                         | Test (`test/`)                                                                                                              |
