@@ -707,7 +707,7 @@ void AutomaticStart::stateTakeoff(const Readings &readings) {
     return;
   }
 
-  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "waiting for the takeoff to finish");
+  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 5000, "waiting for the takeoff to finish");
 }
 
 //}
