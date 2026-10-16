@@ -21,7 +21,7 @@ inline bool isArmed(const uint8_t state) {
 }
 
 // MRS (a tracker) is already flying the UAV, so there is nothing left for us to start
-// (MANUAL is not here: PX4 flies it without offboard, see AutomaticStart::handleManualPause())
+// (MANUAL is not here: a pilot or the autopilot flies it without offboard, see AutomaticStart::handleManualPause())
 inline bool isMrsFlying(const uint8_t state) {
   switch (state) {
   case State::STATE_TAKEOFF:
