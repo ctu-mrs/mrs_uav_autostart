@@ -83,9 +83,9 @@ enum PauseStep_t
 
 constexpr std::array<const char *, 4> pause_step_names = {"IN_MANUAL", "SETTLING", "UNCONFIRMED", "NEEDS_REARM"};
 
-// the UAV as one tick of timerMain() sees it, taken once at its start; the uav_state part is written by
-// callbackUavState() and copied under its mutex, everything the timer owns stays in members
-struct UavSnapshot
+// what one tick of timerMain() read from DiagnosticsManager, taken once at its start; the uav_state part is written
+// by callbackUavState() and copied under its mutex, everything the timer owns stays in members
+struct Readings
 {
   uint8_t                        state;
   bool                           armed;
@@ -138,7 +138,7 @@ private:
 
   std::shared_ptr<TimerType> timer_main_;
   mrs_lib::Task<>            timerMain();
-  UavSnapshot                takeUavSnapshot();
+  Readings                   takeReadings();
   double                     _main_timer_rate_;
 
   // | ------------------------ uav state ----------------------- |
@@ -191,17 +191,17 @@ private:
   // | -------- global checks, before the state handlers -------- |
 
   bool                checkDataReady();
-  bool                checkAlreadyFlying(const UavSnapshot &uav);
-  void                checkManual(const UavSnapshot &uav);
-  mrs_lib::Task<bool> checkPossiblyInTheAir(const UavSnapshot &uav);
+  bool                checkAlreadyFlying(const Readings &readings);
+  void                checkManual(const Readings &readings);
+  mrs_lib::Task<bool> checkPossiblyInTheAir(const Readings &readings);
 
   // | --------------------- state handlers --------------------- |
 
-  void                stateWaitingForArm(const UavSnapshot &uav);
-  mrs_lib::Task<>     stateWaitingForOutput(const UavSnapshot &uav);
-  mrs_lib::Task<>     stateCountdown(const UavSnapshot &uav);
-  mrs_lib::Task<bool> stateManualPause(const UavSnapshot &uav);
-  void                stateTakeoff(const UavSnapshot &uav);
+  void                stateWaitingForArm(const Readings &readings);
+  mrs_lib::Task<>     stateWaitingForOutput(const Readings &readings);
+  mrs_lib::Task<>     stateCountdown(const Readings &readings);
+  mrs_lib::Task<bool> stateManualPause(const Readings &readings);
+  void                stateTakeoff(const Readings &readings);
 
   // | ---------------------- service calls --------------------- |
 
@@ -233,7 +233,7 @@ private:
   void             changeState(AutostartState_t new_state);
   void             changePauseStep(PauseStep_t new_step);
 
-  static AutostartState_t waitingState(const UavSnapshot &uav);
+  static AutostartState_t waitingState(const Readings &readings);
 
   void finish(const std::string &reason);
 };
