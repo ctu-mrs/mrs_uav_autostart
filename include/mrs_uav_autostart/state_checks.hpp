@@ -1,5 +1,4 @@
-#ifndef MRS_UAV_AUTOSTART_STATE_CHECKS_HPP
-#define MRS_UAV_AUTOSTART_STATE_CHECKS_HPP
+#pragma once
 
 #include <cstdint>
 
@@ -104,5 +103,3 @@ inline const char *stateName(const uint8_t state) {
 }
 
 } // namespace mrs_uav_autostart
-
-#endif // MRS_UAV_AUTOSTART_STATE_CHECKS_HPP
