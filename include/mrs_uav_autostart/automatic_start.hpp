@@ -50,12 +50,6 @@ namespace mrs_uav_autostart
 
 /* class AutomaticStart //{ */
 
-// ControlInfo shows an accepted control output ON only a moment later; until then the call is not repeated
-constexpr double OUTPUT_ON_RETRY_PERIOD_S = 1.0;
-
-// after a short MANUAL, the UAV must stay armed (and settled) this long before automatic start resumes
-constexpr double ARMED_STABLE_BEFORE_RESUME_S = 1.0;
-
 // state machine, see README.md
 enum AutostartState_t
 {
@@ -175,7 +169,7 @@ private:
 
   bool we_turned_output_on_ = false;
 
-  // when toggle_output last accepted our ON, unset after a refusal; see OUTPUT_ON_RETRY_PERIOD_S
+  // when toggle_output last accepted our ON, unset after a refusal; see _output_on_confirm_timeout_
   rclcpp::Time output_on_time_;
 
   // | ------------------ MANUAL pause (timer-owned) ----------------- |
@@ -222,6 +216,8 @@ private:
   double _takeoff_countdown_;
   double _manual_resume_timeout_;
   double _arm_to_output_timeout_;
+  double _output_on_confirm_timeout_;
+  double _manual_resume_delay_;
   double _takeoff_timeout_;
   double _diagnostics_manager_timeout_;
 

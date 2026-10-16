@@ -2,10 +2,17 @@ mrs_uav_autostart:
 
   main_timer_rate: 30.0 # [Hz]
 
-  # automatic start disarms if it could not enable control output within this time after the pilot armed
-  # (time before all DiagnosticsManager data arrived does not count; never for a UAV that was armed before
-  # automatic start came up)
+  # automatic start disarms if toggle_output did not accept an ON within this time of entering WAITING_FOR_OUTPUT
+  # (the pilot armed, a resume, or the output dropped OFF); time before all DiagnosticsManager data arrived does not
+  # count; never for a UAV that was armed before automatic start came up
   arm_to_output_timeout: 1.5 # [s]
+
+  # ControlInfo shows an accepted control output ON only a moment later; until then the ON is not requested again
+  # (keep it shorter than arm_to_output_timeout, so that a refused call is retried before the timeout)
+  output_on_confirm_timeout: 1.0 # [s]
+
+  # after a short MANUAL, the UAV must stay armed and settled this long before automatic start resumes
+  manual_resume_delay: 1.0 # [s]
 
   # stop waiting for a triggered takeoff to finish after this time
   takeoff_timeout: 60.0 # [s]
