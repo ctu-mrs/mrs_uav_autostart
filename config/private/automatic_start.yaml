@@ -2,11 +2,13 @@ mrs_uav_autostart:
 
   main_timer_rate: 30.0 # [Hz]
 
-  # disarm if control output could not be enabled within this time after arming
-  # (time before all DiagnosticsManager data arrived does not count)
+  # automatic start disarms if it could not enable control output within this time after the pilot armed
+  # (time before all DiagnosticsManager data arrived does not count; never for a UAV that was armed before
+  # automatic start came up)
   arm_to_output_timeout: 1.5 # [s]
 
   # stop waiting for a triggered takeoff to finish after this time
   takeoff_timeout: 60.0 # [s]
 
+  # pause while DiagnosticsManager's general_robot_info is older than this
   diagnostics_manager_timeout: 3.0 # [s]

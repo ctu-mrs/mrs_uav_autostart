@@ -103,8 +103,8 @@ private:
   std::mutex        mutex_uav_state_;
 
   // Armed at our first valid reading: we did not see the arming, so the UAV may already be in mid air, where the
-  // state can't tell (manual flight reads as ARMED). We still proceed normally, but never disarm such a UAV --
-  // on the ground, the autopilot's own pre-takeoff auto-disarm covers it.
+  // state can't always tell (manual flight reads as ARMED when the HW API doesn't report airborne). We still proceed
+  // normally, but never disarm such a UAV -- on the ground, the autopilot's own pre-takeoff auto-disarm covers it.
   std::atomic<bool> started_armed_ = false;
 
   // first time all DiagnosticsManager data was available; the arm-to-output timeout never counts time before it
@@ -511,7 +511,6 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
   case STATE_TAKEOFF: {
 
-    // if takeoff finished
     if (control_info->flying_normally) {
 
       RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "takeoff finished");
