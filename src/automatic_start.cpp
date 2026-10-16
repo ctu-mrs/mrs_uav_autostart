@@ -30,7 +30,7 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   armed_since_ = time_zero_;
 
-  data_ready_time_ = time_zero_;
+  data_ok_since_ = time_zero_;
 
   offboard_since_ = time_zero_;
 
@@ -330,11 +330,15 @@ bool AutomaticStart::dataReady() {
     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 5000, "waiting for DiagnosticsManager: %s", missing.c_str());
     error_publisher_->addWaitingForNodeError({"DiagnosticsManager", "main"});
 
+    data_was_ok_ = false;
+
     return false;
   }
 
-  if (data_ready_time_.nanoseconds() == 0) {
-    data_ready_time_ = clock_->now();
+  // the first time, or back after a gap
+  if (!data_was_ok_) {
+    data_ok_since_ = clock_->now();
+    data_was_ok_   = true;
   }
 
   return true;
@@ -575,8 +579,8 @@ mrs_lib::Task<bool> AutomaticStart::handleControlOutput(const uint8_t state, con
                          preflight.topics_ok ? "true" : "FALSE", preflight.position_valid ? "true" : "FALSE");
   }
 
-  // counted from when we could first act, so data arriving late can't make us disarm right away
-  const double time_waiting = (clock_->now() - std::max({armed_since, data_ready_time_, resume_time_})).seconds();
+  // counted from when we could act, so data arriving late or back after a gap can't make us disarm right away
+  const double time_waiting = (clock_->now() - std::max({armed_since, data_ok_since_, resume_time_})).seconds();
 
   if (!we_turned_output_on_ && time_waiting > _arm_to_output_timeout_) {
 
@@ -622,7 +626,8 @@ mrs_lib::Task<> AutomaticStart::handleCountdown(const bool armed, const bool off
     co_return;
   }
 
-  const double time_in_offboard = (clock_->now() - offboard_since).seconds();
+  // restarted after a data gap, so that the pilot always sees the full countdown before the takeoff
+  const double time_in_offboard = (clock_->now() - std::max(offboard_since, data_ok_since_)).seconds();
 
   if (time_in_offboard > _takeoff_countdown_) {
     co_await changeState(STATE_TAKEOFF);

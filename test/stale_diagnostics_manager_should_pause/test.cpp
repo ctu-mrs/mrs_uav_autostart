@@ -109,7 +109,11 @@ bool Tester::test(void) {
   }
 
   publish_general_robot_info = true; // DiagnosticsManager is back
-  if (!wait_for([&] { return takeoff_calls > 0; }, 7.0)) {
+  sleep(4.0);                        // the countdown restarts after the gap: no takeoff before takeoff_countdown (5 s)
+  if (takeoff_calls > 0) {
+    return fail("automatic_start took off right after general_robot_info was back, without a new countdown");
+  }
+  if (!wait_for([&] { return takeoff_calls > 0; }, 4.0)) {
     return fail("automatic_start did not take off once general_robot_info was back");
   }
 

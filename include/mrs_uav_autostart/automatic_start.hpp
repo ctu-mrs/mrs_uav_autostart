@@ -118,8 +118,10 @@ private:
   // normally, but never disarm such a UAV -- on the ground, the autopilot's own pre-takeoff auto-disarm covers it.
   std::atomic<bool> started_armed_ = false;
 
-  // first time all DiagnosticsManager data was available; the arm-to-output timeout never counts time before it
-  rclcpp::Time data_ready_time_;
+  // since when all DiagnosticsManager data has been available without a gap; the arm-to-output timeout and the takeoff
+  // countdown never count time before it
+  rclcpp::Time data_ok_since_;
+  bool         data_was_ok_ = false;
 
   // | --------------- Gazebo spawner diagnostics --------------- |
 
