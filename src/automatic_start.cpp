@@ -811,6 +811,7 @@ bool AutomaticStart::hasObsoleteParams(const std::string &custom_config_path) {
       {"handle_takeoff", "mrs_uav_autostart/trigger_takeoff"},
       {"control_output_timeout", "mrs_uav_autostart/arm_to_output_timeout"},
       {"pre_takeoff_sleep", "mrs_uav_autostart/takeoff_countdown"},
+      {"preflight_check", "mrs_uav_managers/diagnostics_manager/preflight_check"},
   };
 
   const YAML::Node config = YAML::LoadFile(custom_config_path);
