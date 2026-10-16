@@ -2,6 +2,48 @@
 
 Please follow to the [documentation page](https://ctu-mrs.github.io/docs/features/autostart/).
 
+## Changes compared to the original version
+
+Compared to the ROS1 version (`master`) and to the first ROS2 port (`ros2` before automatic start
+was moved onto DiagnosticsManager):
+
+- **Inputs**: automatic start reads only DiagnosticsManager (`uav_state`, `control_info`,
+  `general_robot_info`) and, in simulation, the Gazebo spawner. It no longer subscribes to the HW
+  API, EstimationManager, ControlManager, UavManager or SafetyAreaManager.
+- **Preflight checks** (speed, height, gyro, topics, position in the safety area) are computed by
+  DiagnosticsManager and read from `general_robot_info.preflight_status`. The `preflight_check/*`
+  parameters moved to `mrs_uav_managers` (`config/public/diagnostics_manager/preflight_check.yaml`)
+  with the same defaults; automatic start no longer reads them from its own config.
+- **Already flying**: if MRS already flies the UAV (e.g. the node was restarted mid-air), automatic
+  start finishes without touching control output, arming or takeoff. Before, it counted down and
+  called `uav_manager/takeoff` in the air.
+- **The pilot takes over (`MANUAL`)**: new. Automatic start turns control output OFF and pauses.
+  After a short `MANUAL` (an aborted OFFBOARD, under 5 s) it resumes; after a longer one the pilot
+  must disarm and arm again. Before, there was no pause: the "possibly in the air" check finished
+  automatic start for good.
+- **Disarming by automatic start**: still only when it cannot turn control output ON within
+  `arm_to_output_timeout` (1.5 s) after the pilot armed. The timeout now also waits until the
+  DiagnosticsManager data is available, and automatic start never disarms a UAV that the pilot armed
+  before automatic start came up. Before, such a UAV was disarmed 1.5 s after the data arrived.
+- **Takeoff monitoring**: after calling `uav_manager/takeoff`, automatic start finishes when the
+  takeoff is interrupted (`DISARMED`, `ARMED`, `MANUAL`, `LAND`, `EHOVER`, `ELAND`, `FAILSAFE`) or
+  the UAV is not flying normally within `takeoff_timeout` (60 s). Before, it waited for the takeoff
+  forever.
+- **Stale data**: if DiagnosticsManager stops publishing `general_robot_info` for
+  `diagnostics_manager_timeout` (3 s), automatic start pauses until the data is back. Before, the
+  data only had to arrive once.
+- **Errorgraph**: missing data is reported as waiting for DiagnosticsManager. The first ROS2 port
+  reported each manager separately; the ROS1 version had no errorgraph.
+- **Parameters**: new `manual_abort_max_duration` (5 s), `takeoff_timeout` (60 s) and
+  `diagnostics_manager_timeout` (3 s); `preflight_check/*` removed (see above). Since the first ROS2
+  port: `safety_timeout` is `takeoff_countdown`, `handle_takeoff` is `trigger_takeoff`,
+  `control_output_timeout` is `arm_to_output_timeout`, `pre_takeoff_sleep` and `body_frame_name` are
+  gone, and an old parameter name in a custom config stops the node.
+- **Topic renamed**: `~/can_takeoff` is now `~/ready_to_enable_control_output` (same meaning: topics
+  ok and position valid).
+- **After finishing** (since the first ROS2 port): the node stays alive and does nothing; the ROS1
+  version shut itself down.
+
 ## State machine
 
 This section describes how `automatic_start` behaves (`src/automatic_start.cpp`, `timerMain()`,
