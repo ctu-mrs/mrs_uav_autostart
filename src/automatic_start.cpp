@@ -512,7 +512,7 @@ bool AutomaticStart::dataReady() {
 
 mrs_lib::Task<> AutomaticStart::changeState(AutostartState_t new_state) {
 
-  RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "switching states %s -> %s", state_names[current_state_], state_names[new_state]);
+  RCLCPP_INFO(node_->get_logger(), "switching states %s -> %s", state_names[current_state_], state_names[new_state]);
 
   switch (new_state) {
 
