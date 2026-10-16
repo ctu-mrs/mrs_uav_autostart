@@ -26,11 +26,11 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   time_zero_ = rclcpp::Time(0, 0, clock_->get_clock_type());
 
-  armed_time_ = time_zero_;
+  armed_since_ = time_zero_;
 
   data_ready_time_ = time_zero_;
 
-  offboard_time_ = time_zero_;
+  offboard_since_ = time_zero_;
 
   manual_since_       = time_zero_;
   armed_stable_since_ = time_zero_;
@@ -70,7 +70,7 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   param_loader.loadParam("mrs_uav_autostart/diagnostics_manager_timeout", _diagnostics_manager_timeout_);
 
   param_loader.loadParam("mrs_uav_autostart/takeoff_countdown", _takeoff_countdown_);
-  param_loader.loadParam("mrs_uav_autostart/manual_abort_max_duration", _manual_abort_max_duration_);
+  param_loader.loadParam("mrs_uav_autostart/manual_resume_timeout", _manual_resume_timeout_);
   param_loader.loadParam("mrs_uav_autostart/trigger_takeoff", _trigger_takeoff_);
 
   if (hasObsoleteParams(custom_config_path)) {
@@ -150,21 +150,21 @@ void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr
 
   // start the clocks on a rising edge, unless recovering from an ambiguous gap (see last_confirmed_armed_)
   if (is_armed && !isArmed(uav_state_) && !last_confirmed_armed_) {
-    armed_time_ = clock_->now();
+    armed_since_ = clock_->now();
   }
 
   if (is_offboard && uav_state_ != State::STATE_OFFBOARD && !last_confirmed_offboard_) {
-    offboard_time_ = clock_->now();
+    offboard_since_ = clock_->now();
   }
 
   uav_state_ = state;
 
   // latch + update the confirmed-state trackers, skipping ambiguous UNKNOWN/NO_LINK readings
   if (isConfirmed(state)) {
-    if (!uav_state_valid_ever_) {
+    if (!got_confirmed_uav_state_) {
       started_armed_ = is_armed;
     }
-    uav_state_valid_ever_    = true;
+    got_confirmed_uav_state_ = true;
     last_confirmed_armed_    = is_armed;
     last_confirmed_offboard_ = is_offboard;
   }
@@ -209,8 +209,8 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
     co_return;
   }
 
-  auto [state, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_, armed_time_, offboard_time_);
-  auto control_info                       = sh_control_info_.getMsg();
+  auto [state, armed_since, offboard_since] = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_, armed_since_, offboard_since_);
+  auto control_info                         = sh_control_info_.getMsg();
 
   const bool armed    = isArmed(state);
   const bool offboard = state == State::STATE_OFFBOARD;
@@ -239,7 +239,7 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
     // safe to read directly: output_enabled defaults to false whenever its source was invalid
     const bool control_output_enabled = control_info->output_enabled;
 
-    if (co_await handleControlOutput(armed, control_output_enabled, armed_time, preflight)) {
+    if (co_await handleControlOutput(armed, control_output_enabled, armed_since, preflight)) {
       co_return;
     }
 
@@ -247,7 +247,7 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
       co_return;
     }
 
-    co_await handleCountdown(offboard, control_output_enabled, offboard_time);
+    co_await handleCountdown(offboard, control_output_enabled, offboard_since);
 
     break;
   }
@@ -295,7 +295,7 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 bool AutomaticStart::dataReady() {
 
   const bool got_control_info = sh_control_info_.hasMsg();
-  const bool got_uav_state    = sh_uav_state_.hasMsg() && uav_state_valid_ever_;
+  const bool got_uav_state    = sh_uav_state_.hasMsg() && got_confirmed_uav_state_;
 
   // freshness-checked, so a dead DiagnosticsManager gets caught too
   const bool got_general_robot_info =
@@ -399,18 +399,18 @@ mrs_lib::Task<bool> AutomaticStart::handleManualPause(const uint8_t state, const
       manual_since_ = clock_->now();
     }
 
-    if ((clock_->now() - manual_since_).seconds() >= _manual_abort_max_duration_) {
+    if ((clock_->now() - manual_since_).seconds() >= _manual_resume_timeout_) {
       needs_rearm_ = true;
     }
 
-    if (we_toggled_output_) {
-      if (co_await toggleControlOutput(false)) {
-        we_toggled_output_ = false;
-        paused_output_off_ = true;
+    if (we_turned_output_on_) {
+      if (co_await setControlOutput(false)) {
+        we_turned_output_on_           = false;
+        we_turned_output_off_in_pause_ = true;
       } else {
         RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output OFF");
       }
-    } else if (control_info->output_enabled && !paused_output_off_) {
+    } else if (control_info->output_enabled && !we_turned_output_off_in_pause_) {
       RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "control output is ON during MANUAL, but automatic start did not turn it on");
     }
 
@@ -422,14 +422,14 @@ mrs_lib::Task<bool> AutomaticStart::handleManualPause(const uint8_t state, const
 
     if (state == State::STATE_DISARMED) {
       RCLCPP_INFO(node_->get_logger(), "disarmed after MANUAL, starting over");
-      manual_pause_      = false;
-      needs_rearm_       = false;
-      paused_output_off_ = false;
+      manual_pause_                  = false;
+      needs_rearm_                   = false;
+      we_turned_output_off_in_pause_ = false;
 
     } else if (!isArmed(state)) {
       // NO_LINK / UNKNOWN: neither a disarm nor a landing -- stay paused; the UAV may still be flying manually, so a
       // long blind pause counts towards the MANUAL duration as well
-      if ((clock_->now() - manual_since_).seconds() >= _manual_abort_max_duration_) {
+      if ((clock_->now() - manual_since_).seconds() >= _manual_resume_timeout_) {
         needs_rearm_ = true;
       }
       RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "paused, UAV state not confirmed (NO_LINK to the autopilot, or UNKNOWN)");
@@ -462,9 +462,9 @@ mrs_lib::Task<bool> AutomaticStart::handleManualPause(const uint8_t state, const
       }
 
       RCLCPP_INFO(node_->get_logger(), "MANUAL was short (aborted OFFBOARD), resuming");
-      manual_pause_      = false;
-      paused_output_off_ = false;
-      resume_time_       = clock_->now();
+      manual_pause_                  = false;
+      we_turned_output_off_in_pause_ = false;
+      resume_time_                   = clock_->now();
     }
   }
 
@@ -490,9 +490,9 @@ mrs_lib::Task<bool> AutomaticStart::handlePossiblyInTheAir(const bool armed, con
 
     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "the UAV is armed and possibly in the air, finishing to prevent an unwanted takeoff");
 
-    if (we_toggled_output_) {
+    if (we_turned_output_on_) {
 
-      bool res = co_await toggleControlOutput(false);
+      bool res = co_await setControlOutput(false);
 
       if (!res) {
         RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output OFF");
@@ -510,7 +510,7 @@ mrs_lib::Task<bool> AutomaticStart::handlePossiblyInTheAir(const bool armed, con
 /* handleControlOutput() //{ */
 
 // true when the arm-to-output timeout disarmed the UAV and finished: timerMain() must not go on with the rest of IDLE
-mrs_lib::Task<bool> AutomaticStart::handleControlOutput(const bool armed, const bool control_output_enabled, const rclcpp::Time armed_time,
+mrs_lib::Task<bool> AutomaticStart::handleControlOutput(const bool armed, const bool control_output_enabled, const rclcpp::Time armed_since,
                                                         const mrs_msgs::msg::PreflightStatus &preflight) {
 
   const bool ready_to_enable_control_output = preflight.topics_ok && preflight.position_valid;
@@ -525,17 +525,17 @@ mrs_lib::Task<bool> AutomaticStart::handleControlOutput(const bool armed, const 
 
   if (ready_to_enable_control_output) {
 
-    we_toggled_output_ = co_await toggleControlOutput(true);
+    we_turned_output_on_ = co_await setControlOutput(true);
 
-    if (!we_toggled_output_) {
+    if (!we_turned_output_on_) {
       RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON");
     }
   }
 
   // counted from when we could first act, so data arriving late can't make us disarm right away
-  const double time_waiting = (clock_->now() - std::max({armed_time, data_ready_time_, resume_time_})).seconds();
+  const double time_waiting = (clock_->now() - std::max({armed_since, data_ready_time_, resume_time_})).seconds();
 
-  if (!we_toggled_output_ && time_waiting > _arm_to_output_timeout_) {
+  if (!we_turned_output_on_ && time_waiting > _arm_to_output_timeout_) {
 
     if (started_armed_) {
       RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
@@ -557,7 +557,7 @@ mrs_lib::Task<bool> AutomaticStart::handleControlOutput(const bool armed, const 
 /* handleCountdown() //{ */
 
 // the OFFBOARD countdown: takes off (or finishes, when not triggering the takeoff) once it runs out
-mrs_lib::Task<> AutomaticStart::handleCountdown(const bool offboard, const bool control_output_enabled, const rclcpp::Time offboard_time) {
+mrs_lib::Task<> AutomaticStart::handleCountdown(const bool offboard, const bool control_output_enabled, const rclcpp::Time offboard_since) {
 
   // STATE_OFFBOARD implies armed, and offboard always follows arming, so the offboard timer alone suffices
   if (!offboard || !control_output_enabled) {
@@ -569,12 +569,12 @@ mrs_lib::Task<> AutomaticStart::handleCountdown(const bool offboard, const bool 
     co_return;
   }
 
-  const double offboard_time_diff = (clock_->now() - offboard_time).seconds();
+  const double time_in_offboard = (clock_->now() - offboard_since).seconds();
 
-  if (offboard_time_diff > _takeoff_countdown_) {
+  if (time_in_offboard > _takeoff_countdown_) {
     co_await changeState(STATE_TAKEOFF);
   } else {
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off in %.0f", (_takeoff_countdown_ - offboard_time_diff));
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off in %.0f", (_takeoff_countdown_ - time_in_offboard));
   }
 }
 
@@ -611,15 +611,15 @@ mrs_lib::Task<bool> AutomaticStart::takeoff() {
 
 //}
 
-/* toggleControlOutput() //{ */
+/* setControlOutput() //{ */
 
-mrs_lib::Task<bool> AutomaticStart::toggleControlOutput(const bool &value) {
+mrs_lib::Task<bool> AutomaticStart::setControlOutput(const bool enabled) {
 
-  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "setting control output %s", value ? "ON" : "OFF");
+  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "setting control output %s", enabled ? "ON" : "OFF");
 
   std::shared_ptr<std_srvs::srv::SetBool::Request> request = std::make_shared<std_srvs::srv::SetBool::Request>();
 
-  request->data = value;
+  request->data = enabled;
 
   auto response = co_await service_client_toggle_control_output_.callAwaitable(request);
 

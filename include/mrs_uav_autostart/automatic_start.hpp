@@ -110,7 +110,7 @@ private:
   // | ------------------------ uav state ----------------------- |
 
   void              callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr msg);
-  std::atomic<bool> uav_state_valid_ever_ = false;
+  std::atomic<bool> got_confirmed_uav_state_ = false;
   std::mutex        mutex_uav_state_;
 
   // Armed at our first valid reading: we did not see the arming, so the UAV may already be in mid air, where the
@@ -133,20 +133,20 @@ private:
   // latest reading, mrs_msgs::msg::State::STATE_*
   uint8_t uav_state_ = State::STATE_UNKNOWN;
 
-  rclcpp::Time armed_time_;
-  rclcpp::Time offboard_time_;
+  rclcpp::Time armed_since_;
+  rclcpp::Time offboard_since_;
 
   // last confirmed armed/offboard reading, so a transient UNKNOWN/NO_LINK gap can't reset the timers
   bool last_confirmed_armed_    = false;
   bool last_confirmed_offboard_ = false;
 
-  bool we_toggled_output_ = false;
+  bool we_turned_output_on_ = false;
 
   // | ------------------ MANUAL pause (timer-owned) ----------------- |
 
-  bool         manual_pause_      = false;
-  bool         needs_rearm_       = false;
-  bool         paused_output_off_ = false; // we turned the output OFF during this pause (ControlInfo may still lag)
+  bool         manual_pause_                  = false;
+  bool         needs_rearm_                   = false;
+  bool         we_turned_output_off_in_pause_ = false; // we turned the output OFF during this pause (ControlInfo may still lag)
   rclcpp::Time manual_since_;
   rclcpp::Time armed_stable_since_;
   rclcpp::Time resume_time_;
@@ -159,14 +159,14 @@ private:
 
   mrs_lib::Task<bool> handlePossiblyInTheAir(const bool armed, const bool offboard, const mrs_msgs::msg::PreflightStatus &preflight);
 
-  mrs_lib::Task<bool> handleControlOutput(const bool armed, const bool control_output_enabled, const rclcpp::Time armed_time,
+  mrs_lib::Task<bool> handleControlOutput(const bool armed, const bool control_output_enabled, const rclcpp::Time armed_since,
                                           const mrs_msgs::msg::PreflightStatus &preflight);
 
-  mrs_lib::Task<> handleCountdown(const bool offboard, const bool control_output_enabled, const rclcpp::Time offboard_time);
+  mrs_lib::Task<> handleCountdown(const bool offboard, const bool control_output_enabled, const rclcpp::Time offboard_since);
 
   mrs_lib::Task<bool> takeoff();
 
-  mrs_lib::Task<bool> toggleControlOutput(const bool &value);
+  mrs_lib::Task<bool> setControlOutput(const bool enabled);
   mrs_lib::Task<bool> disarm();
 
   bool isGazeboSimulation(void);
@@ -179,7 +179,7 @@ private:
 
   bool   _trigger_takeoff_ = false;
   double _takeoff_countdown_;
-  double _manual_abort_max_duration_;
+  double _manual_resume_timeout_;
   double _arm_to_output_timeout_;
   double _takeoff_timeout_;
   double _diagnostics_manager_timeout_;

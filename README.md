@@ -35,7 +35,7 @@ was moved onto DiagnosticsManager):
   data only had to arrive once.
 - **Errorgraph**: missing data is reported as waiting for DiagnosticsManager. The first ROS2 port
   reported each manager separately; the ROS1 version had no errorgraph.
-- **Parameters**: new `manual_abort_max_duration` (5 s), `takeoff_timeout` (60 s) and
+- **Parameters**: new `manual_resume_timeout` (5 s), `takeoff_timeout` (60 s) and
   `diagnostics_manager_timeout` (3 s); `preflight_check/*` removed (see above). Since the first ROS2
   port: `safety_timeout` is `takeoff_countdown`, `handle_takeoff` is `trigger_takeoff`,
   `control_output_timeout` is `arm_to_output_timeout`, `pre_takeoff_sleep` and `body_frame_name` are
@@ -136,7 +136,7 @@ Notes:
    keeps control output OFF for the whole pause, so MRS can't take over when the pilot switches
    OFFBOARD on again (it would find no setpoints). `Disarmed` can't reach `ManualPause`:
    `uav_state == MANUAL` requires the UAV to be armed.
-5. **Long `MANUAL`**: a `MANUAL` that lasts `manual_abort_max_duration` (5 s by default) or longer
+5. **Long `MANUAL`**: a `MANUAL` that lasts `manual_resume_timeout` (5 s by default) or longer
    is treated as a real flight, not an aborted OFFBOARD attempt. To use automatic start again, the
    pilot must disarm and arm again.
 6. Only a disarm by the pilot or PX4 (`uav_state` `DISARMED`) ends `NeedsRearm`; `NO_LINK`/`UNKNOWN`
@@ -156,7 +156,7 @@ Notes:
    after a pause.
 10. **Unconfirmed**: during a short pause, `NO_LINK`/`UNKNOWN` keeps automatic start paused (it
     warns "paused, UAV state not confirmed"). The pilot may still be flying without automatic start
-    seeing it, so once `manual_abort_max_duration` has passed since the `MANUAL` began, the pilot
+    seeing it, so once `manual_resume_timeout` has passed since the `MANUAL` began, the pilot
     must disarm and arm again, just like after a long `MANUAL`. The time is measured from when the
     `MANUAL` began, so it includes any time already spent in `Settling`: a `NO_LINK`/`UNKNOWN`
     reading ≥ 5 s after the `MANUAL` began needs a rearm straight away. A long `Settling` while
@@ -178,7 +178,8 @@ Notes:
 ### Transitions and the tests that cover them
 
 The simulation tests are in `test/<name>/`. How every `uav_state` is classified
-(`include/mrs_uav_autostart/state_checks.hpp`: confirmed, armed, flown by MRS, takeoff interrupted) is
+(`include/mrs_uav_autostart/state_checks.hpp`: confirmed, armed, flown by MRS, takeoff interrupted)
+is
 unit-tested in `test/state_checks`.
 
 | Transition                                                                                                                         | Test (`test/`)                                                                                                              |

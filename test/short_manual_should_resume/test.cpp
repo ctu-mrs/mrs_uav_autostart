@@ -97,7 +97,7 @@ bool Tester::test(void) {
   if (!wait_for([&] { return !output_enabled; }, 2.0)) {
     return fail("automatic_start did not turn its output off on MANUAL");
   }
-  sleep(2.0); // shorter than manual_abort_max_duration
+  sleep(2.0); // shorter than manual_resume_timeout
 
   state = mrs_msgs::msg::State::STATE_ARMED; // PX4 detected the landing
   if (!wait_for([&] { return output_enabled.load(); }, 4.0)) {
