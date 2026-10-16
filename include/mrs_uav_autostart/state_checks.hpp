@@ -57,6 +57,46 @@ inline bool isTakeoffInterrupted(const uint8_t state) {
   }
 }
 
+// for the log
+inline const char *stateName(const uint8_t state) {
+  switch (state) {
+  case State::STATE_UNKNOWN:
+    return "UNKNOWN";
+  case State::STATE_DISARMED:
+    return "DISARMED";
+  case State::STATE_ARMED:
+    return "ARMED";
+  case State::STATE_OFFBOARD:
+    return "OFFBOARD";
+  case State::STATE_MANUAL:
+    return "MANUAL";
+  case State::STATE_TAKEOFF:
+    return "TAKEOFF";
+  case State::STATE_LAND:
+    return "LAND";
+  case State::STATE_RC_MODE:
+    return "RC_MODE";
+  case State::STATE_HOVER:
+    return "HOVER";
+  case State::STATE_GOTO:
+    return "GOTO";
+  case State::STATE_TRAJECTORY:
+    return "TRAJECTORY";
+  case State::STATE_MIDAIR:
+    return "MIDAIR";
+  case State::STATE_EHOVER:
+    return "EHOVER";
+  case State::STATE_ELAND:
+    return "ELAND";
+  case State::STATE_FAILSAFE:
+    return "FAILSAFE";
+  case State::STATE_NO_LINK:
+    return "NO_LINK";
+  default:
+    return "?";
+  }
+}
+
 } // namespace mrs_uav_autostart
 
 #endif // MRS_UAV_AUTOSTART_STATE_CHECKS_HPP
