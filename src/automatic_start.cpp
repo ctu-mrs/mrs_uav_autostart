@@ -544,6 +544,12 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
     timer_main_->stop();
 
+    // the inputs are not needed any more
+    sh_uav_state_.stop();
+    sh_control_info_.stop();
+    sh_general_robot_info_.stop();
+    sh_gazebo_spawner_diag_.stop();
+
     break;
   }
   }
