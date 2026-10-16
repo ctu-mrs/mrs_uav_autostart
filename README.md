@@ -16,7 +16,8 @@ was moved onto DiagnosticsManager):
   with the same defaults; automatic start no longer reads them from its own config.
 - **Already flying**: if MRS already flies the UAV (e.g. the node was restarted mid-air), automatic
   start finishes without touching control output, arming or takeoff. Before, it counted down and
-  called `uav_manager/takeoff` in the air.
+  called `uav_manager/takeoff`, which UavManager refused (it requires `NullTracker`), so automatic
+  start finished on a failed takeoff.
 - **The pilot takes over (`MANUAL`)**: new. Automatic start turns control output OFF and pauses.
   After a short `MANUAL` (an aborted OFFBOARD, under 5 s) it resumes; after a longer one the pilot
   must disarm and arm again. Before, there was no pause: the "possibly in the air" check finished
