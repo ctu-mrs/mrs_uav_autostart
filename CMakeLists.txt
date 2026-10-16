@@ -17,6 +17,8 @@ endif()
 # set the compile options to show code warnings
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options("-Wall" "-Wextra" "-Wpedantic")
+  # a Task<> function without co_await/co_return is not a coroutine but a function missing its return
+  add_compile_options("-Werror=return-type")
 endif()
 
 if(ENABLE_COVERAGE)
@@ -68,8 +70,13 @@ target_link_libraries(MrsUavAutostart_AutomaticStart
     ${std_srvs_TARGETS}
 )
 
+target_include_directories(MrsUavAutostart_AutomaticStart
+  PRIVATE
+    include
+)
+
 rclcpp_components_register_nodes(MrsUavAutostart_AutomaticStart
-  "mrs_uav_autostart::automatic_start::AutomaticStart"
+  "mrs_uav_autostart::AutomaticStart"
 )
 
 target_compile_definitions(MrsUavAutostart_AutomaticStart PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})

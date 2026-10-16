@@ -1,227 +1,34 @@
 /* includes //{ */
 
-#include <rclcpp/rclcpp.hpp>
+#include <mrs_uav_autostart/automatic_start.hpp>
 
-#include <mrs_lib/coro/task.hpp>
+#include <algorithm>
+#include <format>
+#include <string>
+
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/mutex.h>
-#include <mrs_lib/subscriber_handler.h>
-#include <mrs_lib/publisher_handler.h>
-#include <mrs_lib/service_client_handler.h>
-#include <mrs_lib/errorgraph/error_publisher.h>
-#include <mrs_lib/node.h>
 
 #include <yaml-cpp/yaml.h>
-
-#include <std_msgs/msg/bool.hpp>
-
-#include <std_srvs/srv/trigger.hpp>
-#include <std_srvs/srv/set_bool.hpp>
-
-#include <mrs_msgs/msg/control_manager_diagnostics.hpp>
-#include <mrs_msgs/msg/safety_area_manager_diagnostics.hpp>
-#include <mrs_msgs/msg/uav_manager_diagnostics.hpp>
-#include <mrs_msgs/msg/gazebo_spawner_diagnostics.hpp>
-#include <mrs_msgs/msg/hw_api_status.hpp>
-#include <mrs_msgs/msg/hw_api_capabilities.hpp>
-#include <mrs_msgs/msg/estimation_diagnostics.hpp>
-
-#include <sensor_msgs/msg/range.hpp>
-#include <sensor_msgs/msg/imu.hpp>
-
-//}
-
-/* typedefs //{ */
-
-#if USE_ROS_TIMER == 1
-typedef mrs_lib::ROSTimer TimerType;
-#else
-typedef mrs_lib::ThreadTimer TimerType;
-#endif
 
 //}
 
 namespace mrs_uav_autostart
 {
 
-namespace automatic_start
+namespace
 {
 
-/* class Topic //{ */
+/* isSet() //{ */
 
-class Topic {
-private:
-  std::string             topic_name_;
-  rclcpp::Time            last_time_;
-  rclcpp::Node::SharedPtr node_;
-
-public:
-  Topic(const rclcpp::Node::SharedPtr node, std::string topic_name) : topic_name_(topic_name) {
-    node_      = node;
-    last_time_ = rclcpp::Time(0, 0, node->get_clock()->get_clock_type());
-  }
-
-  void updateTime(void) {
-    last_time_ = node_->get_clock()->now();
-  }
-
-  rclcpp::Time getTime(void) {
-    return last_time_;
-  }
-
-  std::string getTopicName(void) {
-    return topic_name_;
-  }
-};
+// the rclcpp::Time members are time_zero_ until set
+bool isSet(const rclcpp::Time &time) {
+  return time.nanoseconds() != 0;
+}
 
 //}
 
-/* class AutomaticStart //{ */
-
-// state machine
-typedef enum
-{
-  STATE_IDLE,
-  STATE_TAKEOFF,
-  STATE_FINISHED
-} LandingStates_t;
-
-const char *state_names[3] = {"IDLING", "TAKEOFF", "FINISHED"};
-
-class AutomaticStart : public mrs_lib::Node {
-
-public:
-  AutomaticStart(rclcpp::NodeOptions options);
-
-private:
-  rclcpp::Node::SharedPtr  node_;
-  rclcpp::Clock::SharedPtr clock_;
-
-  rclcpp::CallbackGroup::SharedPtr cbkgrp_;
-
-  std::atomic<bool> is_initialized_ = false;
-
-  std::string _uav_name_;
-  bool        _simulation_;
-
-  std::shared_ptr<mrs_lib::errorgraph::ErrorPublisher> error_publisher_;
-
-  // | --------------------- service clients -------------------- |
-
-  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool> service_client_toggle_control_output_;
-  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool> service_client_arm_;
-  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger> service_client_takeoff_;
-
-  // | ----------------------- subscribers ---------------------- |
-
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::EstimationDiagnostics>        sh_estimation_diag_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>                  sh_hw_api_status_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiCapabilities>            sh_hw_api_capabilities_;
-  mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>                     sh_distance_sensor_;
-  mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>                       sh_imu_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>    sh_control_manager_diag_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics> sh_safety_area_manager_diag_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>        sh_uav_manager_diag_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>     sh_gazebo_spawner_diag_;
-
-  // | ----------------------- publishers ----------------------- |
-
-  mrs_lib::PublisherHandler<std_msgs::msg::Bool> ph_can_takeoff_;
-
-  // | ----------------------- main timer ----------------------- |
-
-  std::shared_ptr<TimerType> timer_main_;
-  mrs_lib::Task<>            timerMain();
-  double                     _main_timer_rate_;
-
-  // | ------------------------- hw api ------------------------- |
-
-  void              callbackHwApiStatus(const mrs_msgs::msg::HwApiStatus::ConstSharedPtr msg);
-  std::atomic<bool> hw_api_connected_ = false;
-  std::mutex        mutex_hw_api_status_;
-
-  void callbackHwApiCapabilities(const mrs_msgs::msg::HwApiCapabilities::ConstSharedPtr msg);
-
-  // | --------------- Gazebo spawner diagnostics --------------- |
-
-  void                                    callbackGazeboSpawnerDiagnostics(const mrs_msgs::msg::GazeboSpawnerDiagnostics::ConstSharedPtr msg);
-  std::atomic<bool>                       got_gazebo_spawner_diagnostics = false;
-  mrs_msgs::msg::GazeboSpawnerDiagnostics gazebo_spawner_diagnostics_;
-  std::mutex                              mutex_gazebo_spawner_diagnostics_;
-
-  // | ----------------- arm and offboard check ----------------- |
-
-  rclcpp::Time armed_time_;
-  bool         armed_ = false;
-
-  rclcpp::Time offboard_time_;
-  bool         offboard_ = false;
-
-  bool we_toggled_output_ = false;
-
-  // | ------------------------ routines ------------------------ |
-
-  mrs_lib::Task<bool> takeoff();
-
-  mrs_lib::Task<bool> toggleControlOutput(const bool &value);
-  mrs_lib::Task<bool> disarm();
-
-  bool isGazeboSimulation(void);
-  bool hasObsoleteParams(const std::string &custom_config_path);
-  bool topicCheck(void);
-  bool preflightCheckSpeed(void);
-  bool preflighCheckHeight(void);
-  bool preflighCheckGyro(void);
-
-  bool is_gazebo_simulation_ = false;
-
-  // | ---------------------- other params ---------------------- |
-
-  bool   _trigger_takeoff_ = false;
-  double _takeoff_countdown_;
-  double _arm_to_output_timeout_;
-
-  // | ---------------------- state machine --------------------- |
-
-  uint                current_state = STATE_IDLE;
-  mrs_lib::Task<void> changeState(LandingStates_t new_state);
-
-  // | --------------------- preflight check -------------------- |
-
-  double _preflight_check_time_window_;
-
-  // | ------------------ preflight speed check ----------------- |
-
-  bool         _speed_check_enabled_ = false;
-  double       _speed_check_max_speed_;
-  rclcpp::Time speed_check_violated_time_;
-
-  // | ----------------- preflight height check ----------------- |
-
-  bool         _height_check_enabled_ = false;
-  double       _height_check_max_height_;
-  rclcpp::Time height_check_violated_time_;
-
-  // | ----------------- preflight gyro check ----------------- |
-
-  bool         _gyro_check_enabled_ = false;
-  double       _gyro_check_max_rate_;
-  rclcpp::Time gyro_check_violated_time_;
-
-  // | ---------------- generic topic subscribers --------------- |
-
-  bool                     _topic_check_enabled_ = false;
-  double                   _topic_check_timeout_;
-  std::vector<std::string> _topic_check_topic_names_;
-
-  std::vector<Topic>                                  topic_check_topics_;
-  std::vector<rclcpp::GenericSubscription::SharedPtr> generic_subscriber_vec_;
-
-  // generic callback, for any topic, to monitor its rate
-  void genericCallback(std::shared_ptr<rclcpp::SerializedMessage> msg, const std::string topic, const int id);
-};
-
-//}
+} // namespace
 
 /* AutomaticStart() //{ */
 
@@ -233,11 +40,25 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   cbkgrp_          = node_->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
   error_publisher_ = std::make_shared<mrs_lib::errorgraph::ErrorPublisher>(node_, clock_, "AutomaticStart", "main");
 
-  armed_      = false;
-  armed_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
+  time_zero_ = rclcpp::Time(0, 0, clock_->get_clock_type());
 
-  offboard_      = false;
-  offboard_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
+  state_since_ = time_zero_;
+
+  data_ok_since_ = time_zero_;
+
+  offboard_since_ = time_zero_;
+
+  output_on_time_ = time_zero_;
+
+  manual_since_       = time_zero_;
+  armed_stable_since_ = time_zero_;
+  takeoff_time_       = time_zero_;
+
+  const auto shutdown_with_error = [this](const std::string &message) {
+    RCLCPP_ERROR(node_->get_logger(), "%s", message.c_str());
+    error_publisher_->addOneshotError(message);
+    error_publisher_->flushAndShutdown();
+  };
 
   mrs_lib::ParamLoader param_loader(node_, "AutomaticStart");
 
@@ -245,24 +66,16 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   param_loader.loadParam("custom_config", custom_config_path);
 
-  if (custom_config_path != "") {
-    if (!param_loader.addYamlFile(custom_config_path)) {
-      RCLCPP_ERROR(node_->get_logger(), "failed to load custom_config");
-      error_publisher_->addOneshotError("failed to load custom_config");
-      error_publisher_->flushAndShutdown();
-    }
+  if (!custom_config_path.empty() && !param_loader.addYamlFile(custom_config_path)) {
+    shutdown_with_error("failed to load custom_config");
   }
 
   if (!param_loader.addYamlFileFromParam("config_private")) {
-    RCLCPP_ERROR(node_->get_logger(), "failed to load config_private");
-    error_publisher_->addOneshotError("failed to load config_private");
-    error_publisher_->flushAndShutdown();
+    shutdown_with_error("failed to load config_private");
   }
 
   if (!param_loader.addYamlFileFromParam("config_public")) {
-    RCLCPP_ERROR(node_->get_logger(), "failed to load config_public");
-    error_publisher_->addOneshotError("failed to load config_public");
-    error_publisher_->flushAndShutdown();
+    shutdown_with_error("failed to load config_public");
   }
 
   param_loader.loadParam("uav_name", _uav_name_);
@@ -270,33 +83,21 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   param_loader.loadParam("mrs_uav_autostart/main_timer_rate", _main_timer_rate_);
   param_loader.loadParam("mrs_uav_autostart/arm_to_output_timeout", _arm_to_output_timeout_);
+  param_loader.loadParam("mrs_uav_autostart/output_on_confirm_timeout", _output_on_confirm_timeout_);
+  param_loader.loadParam("mrs_uav_autostart/manual_resume_delay", _manual_resume_delay_);
+  param_loader.loadParam("mrs_uav_autostart/takeoff_timeout", _takeoff_timeout_);
+  param_loader.loadParam("mrs_uav_autostart/diagnostics_manager_timeout", _diagnostics_manager_timeout_);
 
   param_loader.loadParam("mrs_uav_autostart/takeoff_countdown", _takeoff_countdown_);
+  param_loader.loadParam("mrs_uav_autostart/manual_resume_timeout", _manual_resume_timeout_);
   param_loader.loadParam("mrs_uav_autostart/trigger_takeoff", _trigger_takeoff_);
 
   if (hasObsoleteParams(custom_config_path)) {
     error_publisher_->flushAndShutdown();
   }
 
-  param_loader.loadParam("mrs_uav_autostart/preflight_check/time_window", _preflight_check_time_window_);
-
-  param_loader.loadParam("mrs_uav_autostart/preflight_check/speed_check/enabled", _speed_check_enabled_);
-  param_loader.loadParam("mrs_uav_autostart/preflight_check/speed_check/max_speed", _speed_check_max_speed_);
-
-  param_loader.loadParam("mrs_uav_autostart/preflight_check/height_check/enabled", _height_check_enabled_);
-  param_loader.loadParam("mrs_uav_autostart/preflight_check/height_check/max_height", _height_check_max_height_);
-
-  param_loader.loadParam("mrs_uav_autostart/preflight_check/gyro_check/enabled", _gyro_check_enabled_);
-  param_loader.loadParam("mrs_uav_autostart/preflight_check/gyro_check/max_rate", _gyro_check_max_rate_);
-
-  param_loader.loadParam("mrs_uav_autostart/preflight_check/topic_check/enabled", _topic_check_enabled_);
-  param_loader.loadParam("mrs_uav_autostart/preflight_check/topic_check/timeout", _topic_check_timeout_);
-  param_loader.loadParam("mrs_uav_autostart/preflight_check/topic_check/topics", _topic_check_topic_names_);
-
   if (!param_loader.loadedSuccessfully()) {
-    RCLCPP_ERROR(this_node().get_logger(), "Could not load all parameters!");
-    error_publisher_->addOneshotError("Could not load all parameters!");
-    error_publisher_->flushAndShutdown();
+    shutdown_with_error("could not load all parameters");
   }
 
   // | ----------------------- subscribers ---------------------- |
@@ -308,56 +109,21 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   shopts.autostart                           = true;
   shopts.subscription_options.callback_group = cbkgrp_;
 
-  sh_estimation_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::EstimationDiagnostics>(shopts, "~/estimation_diag_in");
-  sh_hw_api_status_   = mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>(shopts, "~/hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
-  sh_hw_api_capabilities_ =
-      mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiCapabilities>(shopts, "~/hw_api_capabilities_in", &AutomaticStart::callbackHwApiCapabilities, this);
-  sh_distance_sensor_          = mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>(shopts, "~/distance_sensor_in");
-  sh_imu_                      = mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>(shopts, "~/imu_in");
-  sh_control_manager_diag_     = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>(shopts, "~/control_manager_diagnostics_in");
-  sh_safety_area_manager_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics>(shopts, "~/safety_area_manager_diagnostics_in");
-  sh_uav_manager_diag_         = mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>(shopts, "~/uav_manager_diagnostics_in");
-  sh_gazebo_spawner_diag_      = mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>(shopts, "~/gazebo_spawner_diagnostics_in",
-                                                                                                     &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
+  sh_uav_state_           = mrs_lib::SubscriberHandler<mrs_msgs::msg::State>(shopts, "~/uav_state_in", &AutomaticStart::callbackUavState, this);
+  sh_control_info_        = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlInfo>(shopts, "~/control_info_in");
+  sh_gazebo_spawner_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>(shopts, "~/gazebo_spawner_diagnostics_in",
+                                                                                                &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
+  sh_general_robot_info_  = mrs_lib::SubscriberHandler<mrs_msgs::msg::GeneralRobotInfo>(shopts, "~/general_robot_info_in");
 
   // | ----------------------- publishers ----------------------- |
 
-  ph_can_takeoff_ = mrs_lib::PublisherHandler<std_msgs::msg::Bool>(node_, "~/can_takeoff_out");
+  ph_ready_to_enable_control_output_ = mrs_lib::PublisherHandler<std_msgs::msg::Bool>(node_, "~/ready_to_enable_control_output_out");
 
   // | --------------------- service clients -------------------- |
 
   service_client_takeoff_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/takeoff_out", cbkgrp_);
   service_client_toggle_control_output_ = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/toggle_control_output_out", cbkgrp_);
   service_client_arm_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/arm_out", cbkgrp_);
-
-  // | ------------------ setup generic topics ------------------ |
-
-  if (_topic_check_enabled_) {
-
-    for (int i = 0; i < int(_topic_check_topic_names_.size()); i++) {
-
-      std::string topic = _topic_check_topic_names_.at(i);
-
-      std::string topic_name = topic.substr(0, topic.find(":"));
-      std::string topic_type = topic.substr(topic.find(":") + 1, topic.length());
-
-      if (topic_name.at(0) != '/') {
-        topic_name = "/" + _uav_name_ + "/" + topic_name;
-      }
-
-      Topic tmp_topic(node_, topic_name);
-      topic_check_topics_.push_back(tmp_topic);
-
-      int id = i; // id to identify which topic called the generic callback
-
-      std::function<void(std::shared_ptr<rclcpp::SerializedMessage> msg)> callback_fcn =
-          std::bind(&AutomaticStart::genericCallback, this, std::placeholders::_1, topic_name, id);
-
-      auto tmp_subscriber = node_->create_generic_subscription(topic_name, topic_type, rclcpp::SystemDefaultsQoS(), callback_fcn);
-
-      generic_subscriber_vec_.push_back(tmp_subscriber);
-    }
-  }
 
   // | ------------------------- timers ------------------------- |
 
@@ -373,7 +139,14 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   is_initialized_ = true;
 
-  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "initialized");
+  RCLCPP_INFO(node_->get_logger(), "----------------------------------------");
+  RCLCPP_INFO(node_->get_logger(), "AUTOMATIC START INITIALIZED");
+  if (_trigger_takeoff_) {
+    RCLCPP_INFO(node_->get_logger(), "takeoff %.0f s after OFFBOARD, manual_resume_timeout=%.0f s", _takeoff_countdown_, _manual_resume_timeout_);
+  } else {
+    RCLCPP_INFO(node_->get_logger(), "takeoff left to someone else (trigger_takeoff = false), manual_resume_timeout=%.0f s", _manual_resume_timeout_);
+  }
+  RCLCPP_INFO(node_->get_logger(), "----------------------------------------");
 }
 
 //}
@@ -382,83 +155,38 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 // |                          callbacks                         |
 // --------------------------------------------------------------
 
-/* genericCallback() //{ */
+/* callbackUavState() //{ */
 
-void AutomaticStart::genericCallback([[maybe_unused]] std::shared_ptr<rclcpp::SerializedMessage> msg, [[maybe_unused]] const std::string topic, const int id) {
-
-  topic_check_topics_.at(id).updateTime();
-}
-
-//}
-
-/* callbackHwApiStatus() //{ */
-
-void AutomaticStart::callbackHwApiStatus(const mrs_msgs::msg::HwApiStatus::ConstSharedPtr msg) {
+void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr msg) {
 
   if (!is_initialized_) {
     return;
   }
 
-  RCLCPP_INFO_ONCE(node_->get_logger(), "getting HW API status");
+  const uint8_t state = msg->state;
 
-  std::scoped_lock lock(mutex_hw_api_status_);
+  const bool is_armed = isArmed(state);
 
-  // check armed_ state
-  if (armed_ == false) {
+  // STATE_OFFBOARD only: armed + offboard link, no tracker active yet, i.e. on the ground
+  const bool is_offboard = state == State::STATE_OFFBOARD;
 
-    // if armed_ state changed to true, please "start the clock"
-    if (msg->armed) {
+  std::scoped_lock lock(mutex_uav_state_);
 
-      armed_      = true;
-      armed_time_ = clock_->now();
-    }
-
-    // if we were armed_ previously
-  } else if (armed_ == true) {
-
-    // and we are not really now
-    if (!msg->armed) {
-
-      armed_ = false;
-    }
+  // start the countdown clock on a rising edge, unless recovering from an ambiguous gap (see last_confirmed_offboard_)
+  if (is_offboard && uav_state_ != State::STATE_OFFBOARD && !last_confirmed_offboard_) {
+    offboard_since_ = clock_->now();
   }
 
-  // check offboard_ state
-  if (offboard_ == false) {
+  uav_state_ = state;
 
-    // if offboard_ state changed to true, please "start the clock"
-    if (msg->offboard) {
-
-      offboard_      = true;
-      offboard_time_ = clock_->now();
+  // latch + update the confirmed-state trackers, skipping ambiguous UNKNOWN/NO_LINK readings
+  if (isConfirmed(state)) {
+    if (!got_confirmed_uav_state_) {
+      started_armed_ = is_armed;
     }
-
-    // if we were in offboard_ previously
-  } else if (offboard_ == true) {
-
-    // and we are not really now
-    if (!msg->offboard) {
-
-      offboard_ = false;
-    }
+    got_confirmed_uav_state_ = true;
+    last_confirmed_offboard_ = is_offboard;
   }
-
-  if (msg->connected) {
-    hw_api_connected_ = true;
-  }
-}
-
-//}
-
-/* callbackHwApiCapabilities() //{ */
-
-void AutomaticStart::callbackHwApiCapabilities([[maybe_unused]] const mrs_msgs::msg::HwApiCapabilities::ConstSharedPtr msg) {
-
-  if (!is_initialized_) {
-    return;
-  }
-
-  RCLCPP_INFO_ONCE(node_->get_logger(), "getting HW API capabilities");
 }
 
 //}
@@ -471,14 +199,12 @@ void AutomaticStart::callbackGazeboSpawnerDiagnostics(const mrs_msgs::msg::Gazeb
     return;
   }
 
-  RCLCPP_INFO_ONCE(node_->get_logger(), "getting spawner diagnostics");
-
   {
     std::scoped_lock lock(mutex_gazebo_spawner_diagnostics_);
 
     gazebo_spawner_diagnostics_ = *msg;
 
-    got_gazebo_spawner_diagnostics = true;
+    got_gazebo_spawner_diagnostics_ = true;
   }
 }
 
@@ -496,185 +222,75 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
     co_return;
   }
 
-  bool got_uav_manager_diag         = sh_uav_manager_diag_.hasMsg();
-  bool got_control_manager_diag     = sh_control_manager_diag_.hasMsg();
-  bool got_safety_area_manager_diag = sh_safety_area_manager_diag_.hasMsg();
-  bool got_estimation_diag          = sh_estimation_diag_.hasMsg();
-  bool got_hw_api                   = sh_hw_api_status_.hasMsg() && sh_hw_api_capabilities_.hasMsg() && hw_api_connected_;
-
-  if (!got_control_manager_diag || !got_hw_api || !got_uav_manager_diag || !got_estimation_diag || !got_safety_area_manager_diag) {
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 5000,
-                         "waiting for data: ControlManager=%s, UavManager=%s, HW "
-                         "Api=%s, EstimationManager=%s , SafetyAreaManager=%s",
-                         got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api ? "true" : "FALSE",
-                         got_estimation_diag ? "true" : "FALSE", got_safety_area_manager_diag ? "true" : "FALSE");
-    if (!got_hw_api) {
-      error_publisher_->addWaitingForNodeError({"HwApiManager", "main"});
-    }
-    if (!got_control_manager_diag) {
-      error_publisher_->addWaitingForNodeError({"ControlManager", "main"});
-    }
-    if (!got_uav_manager_diag) {
-      error_publisher_->addWaitingForNodeError({"UavManager", "main"});
-    }
-    if (!got_estimation_diag) {
-      error_publisher_->addWaitingForNodeError({"EstimationManager", "main"});
-    }
-
+  if (!checkDataReady()) {
     co_return;
   }
 
-  auto [armed, offboard, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_hw_api_status_, armed_, offboard_, armed_time_, offboard_time_);
-  auto control_manager_diagnostics                  = sh_control_manager_diag_.getMsg();
+  if (current_state_ == STATE_FINISHED) {
+    // everything is done on entering FINISHED, see changeState()
+    co_return;
+  }
 
-  switch (current_state) {
+  const Readings readings = takeReadings();
 
-  case STATE_IDLE: {
+  if (current_state_ == STATE_TAKEOFF) {
+    stateTakeoff(readings);
+    co_return;
+  }
 
-    // | --------------------- preflight check -------------------- |
+  std_msgs::msg::Bool ready_to_enable_control_output_msg;
+  ready_to_enable_control_output_msg.data = readings.preflight.topics_ok && readings.preflight.position_valid;
+  ph_ready_to_enable_control_output_.publish(ready_to_enable_control_output_msg);
 
-    bool speed_valid  = preflightCheckSpeed();
-    bool height_valid = preflighCheckHeight();
-    bool gyros_valid  = preflighCheckGyro();
+  // | -------- global checks, before the state handlers -------- |
 
-    bool possibly_in_the_air = !speed_valid || !height_valid || !gyros_valid;
+  if (checkAlreadyFlying(readings)) {
+    co_return;
+  }
 
-    if (!offboard && possibly_in_the_air) {
+  checkManual(readings);
 
-      RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "preflight check failed, the UAV is possibly in the air");
-
-      if (armed) {
-
-        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
-                             "-- the UAV is also armed!! finishing to prevent "
-                             "unwanted system activation");
-
-        if (we_toggled_output_) {
-
-          bool res = co_await toggleControlOutput(false);
-
-          if (!res) {
-            RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output OFF");
-          }
-        }
-
-        co_await changeState(STATE_FINISHED);
-
-        co_return;
-      }
-
+  if (current_state_ == STATE_MANUAL_PAUSE) {
+    if (co_await stateManualPause(readings)) {
       co_return;
     }
+  }
 
-    // | -------------------- ready to takeoff -------------------- |
+  // | ---- the waiting state follows from the current inputs ---- |
 
-    bool control_output_enabled = sh_control_manager_diag_.getMsg()->output_enabled;
+  const AutostartState_t waiting_state = waitingState(readings);
 
-    std_msgs::msg::Bool can_takeoff_msg;
-    can_takeoff_msg.data = false;
+  if (waiting_state != current_state_) {
+    changeState(waiting_state);
+  }
 
-    // | -------------------- preflight checks -------------------- |
+  // after the state change: while it holds, the state still has to follow e.g. a disarm
+  if (co_await checkPossiblyInTheAir(readings)) {
+    co_return;
+  }
 
-    bool position_valid = sh_safety_area_manager_diag_.getMsg()->position_valid_2d;
-    bool got_topics     = topicCheck();
-
-    bool can_takeoff = got_topics && position_valid;
-
-    // | ---------------------------------------------------------- |
-
-    can_takeoff_msg.data = can_takeoff;
-    ph_can_takeoff_.publish(can_takeoff_msg);
-
-    if (armed && !control_output_enabled) {
-
-      if (can_takeoff) {
-
-        bool res = co_await toggleControlOutput(true);
-
-        if (!res) {
-          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON");
-        } else {
-          we_toggled_output_ = true;
-        }
-      }
-
-      double time_from_arming = (clock_->now() - armed_time).seconds();
-
-      if (armed_time.seconds() > 0 && time_from_arming > _arm_to_output_timeout_) {
-
-        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _arm_to_output_timeout_);
-        co_await disarm();
-        co_await changeState(STATE_FINISHED);
-      }
-    }
-
-    if (_simulation_ && isGazeboSimulation()) {
-
-      std::scoped_lock lock(mutex_gazebo_spawner_diagnostics_);
-
-      if (got_gazebo_spawner_diagnostics) {
-
-        if (!gazebo_spawner_diagnostics_.spawn_called || gazebo_spawner_diagnostics_.processing) {
-          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) waiting for spawner to finish spawning UAVs");
-          co_return;
-        }
-
-      } else {
-
-        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) missing spawner diagnostics");
-        co_return;
-      }
-    }
-
-    // when armed and in offboard, takeoff
-    if (armed && offboard && control_output_enabled) {
-
-      if (!_trigger_takeoff_) {
-        co_await changeState(STATE_FINISHED);
-      } else {
-
-        rclcpp::Duration armed_time_diff    = clock_->now() - armed_time;
-        rclcpp::Duration offboard_time_diff = clock_->now() - offboard_time;
-
-        if (armed_time_diff.seconds() > _takeoff_countdown_ && offboard_time_diff.seconds() > _takeoff_countdown_) {
-
-          co_await changeState(STATE_TAKEOFF);
-
-        } else {
-
-          double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff.seconds() : offboard_time_diff.seconds();
-
-          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off in %.0f", (_takeoff_countdown_ - min));
-        }
-      }
-    }
-
+  switch (current_state_) {
+  case STATE_WAITING_FOR_ARM: {
+    stateWaitingForArm(readings);
     break;
   }
 
-  case STATE_TAKEOFF: {
-
-    // if takeoff finished
-    if (control_manager_diagnostics->flying_normally) {
-
-      RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "takeoff finished");
-
-      co_await changeState(STATE_FINISHED);
-
-    } else {
-
-      RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "waiting for the takeoff to finish");
-    }
-
+  case STATE_WAITING_FOR_OUTPUT: {
+    co_await stateWaitingForOutput(readings);
     break;
   }
 
-  case STATE_FINISHED: {
+  case STATE_WAITING_FOR_OFFBOARD: {
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 5000, "control output is ON, waiting for the pilot to switch OFFBOARD on");
+    break;
+  }
 
-    RCLCPP_INFO_ONCE(node_->get_logger(), "finished");
+  case STATE_COUNTDOWN: {
+    co_await stateCountdown(readings);
+    break;
+  }
 
-    timer_main_->stop();
-
+  default: {
     break;
   }
   }
@@ -682,135 +298,501 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
 //}
 
+/* takeReadings() //{ */
+
+// called after checkDataReady(), so all the messages are there
+Readings AutomaticStart::takeReadings() {
+
+  Readings readings;
+
+  std::tie(readings.state, readings.offboard_since) = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_, offboard_since_);
+
+  readings.armed    = isArmed(readings.state);
+  readings.offboard = readings.state == State::STATE_OFFBOARD;
+
+  const auto control_info = sh_control_info_.getMsg();
+
+  // safe to read directly: output_enabled defaults to false whenever its source was invalid
+  readings.control_output_enabled = control_info->output_enabled;
+  readings.flying_normally        = control_info->flying_normally;
+
+  readings.preflight = sh_general_robot_info_.getMsg()->preflight_status;
+
+  return readings;
+}
+
+//}
+
 // --------------------------------------------------------------
-// |                          routines                          |
+// |                       state machine                        |
 // --------------------------------------------------------------
 
 /* changeState() //{ */
 
-mrs_lib::Task<> AutomaticStart::changeState(LandingStates_t new_state) {
+void AutomaticStart::changeState(AutostartState_t new_state) {
 
-  RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "switching states %s -> %s", state_names[current_state], state_names[new_state]);
+  RCLCPP_INFO(node_->get_logger(), "switching states %s -> %s", state_names[current_state_], state_names[new_state]);
 
-  switch (new_state) {
+  if (new_state == STATE_FINISHED) {
+    timer_main_->stop();
 
-  case STATE_IDLE: {
-
-    break;
+    // the inputs are not needed any more
+    sh_uav_state_.stop();
+    sh_control_info_.stop();
+    sh_general_robot_info_.stop();
+    sh_gazebo_spawner_diag_.stop();
   }
 
-  case STATE_TAKEOFF: {
-
-    bool res = co_await takeoff();
-
-    if (!res) {
-
-      current_state = STATE_FINISHED;
-
-      co_return;
-    }
-
-    break;
-  }
-
-  case STATE_FINISHED: {
-
-    break;
-  }
-
-  break;
-  }
-
-  current_state = new_state;
+  current_state_ = new_state;
+  state_since_   = clock_->now();
 }
 
 //}
 
-/* takeoff() //{ */
+/* changePauseStep() //{ */
 
-mrs_lib::Task<bool> AutomaticStart::takeoff() {
+void AutomaticStart::changePauseStep(PauseStep_t new_step) {
 
-  RCLCPP_INFO(node_->get_logger(), "taking off");
+  if (new_step == pause_step_) {
+    return;
+  }
+
+  RCLCPP_INFO(node_->get_logger(), "MANUAL_PAUSE: %s -> %s", pause_step_names[pause_step_], pause_step_names[new_step]);
+
+  pause_step_ = new_step;
+}
+
+//}
+
+/* waitingState() //{ */
+
+// the waiting state that matches the current inputs; MANUAL_PAUSE is handled before, see stateManualPause()
+AutostartState_t AutomaticStart::waitingState(const Readings &readings) {
+
+  if (!readings.armed) {
+    return STATE_WAITING_FOR_ARM;
+  }
+
+  if (!readings.control_output_enabled) {
+    return STATE_WAITING_FOR_OUTPUT;
+  }
+
+  if (!readings.offboard) {
+    return STATE_WAITING_FOR_OFFBOARD;
+  }
+
+  return STATE_COUNTDOWN;
+}
+
+//}
+
+/* finish() //{ */
+
+void AutomaticStart::finish(const std::string &reason) {
+
+  changeState(STATE_FINISHED);
+
+  RCLCPP_INFO(node_->get_logger(), "----------------------------------------");
+  RCLCPP_INFO(node_->get_logger(), "AUTOMATIC START FINISHED: %s", reason.c_str());
+  RCLCPP_INFO(node_->get_logger(), "----------------------------------------");
+}
+
+//}
+
+// --------------------------------------------------------------
+// |                       global checks                        |
+// --------------------------------------------------------------
+
+/* checkDataReady() //{ */
+
+// true when all DiagnosticsManager data is there and fresh; every state waits for it
+bool AutomaticStart::checkDataReady() {
+
+  const bool got_control_info = sh_control_info_.hasMsg();
+  const bool got_uav_state    = sh_uav_state_.hasMsg() && got_confirmed_uav_state_;
+
+  // freshness-checked, so a dead DiagnosticsManager gets caught too
+  const bool got_general_robot_info =
+      sh_general_robot_info_.hasMsg() && (clock_->now() - sh_general_robot_info_.lastMsgTime()).seconds() <= _diagnostics_manager_timeout_;
+
+  // position_valid is only a default until SafetyAreaManager reports (position_known); acting on it would keep
+  // control output OFF and make the arm-to-output timeout disarm the UAV
+  const bool got_safety_area_check = got_general_robot_info && sh_general_robot_info_.getMsg()->preflight_status.position_known;
+
+  // all four come via DiagnosticsManager, so a missing reading is attributed to it here;
+  // DiagnosticsManager's own timerErrorPublishing() attributes SafetyAreaManager specifically
+  if (!got_control_info || !got_uav_state || !got_general_robot_info || !got_safety_area_check) {
+    std::string missing;
+
+    const auto add_missing = [&missing](const bool got, const char *name) {
+      if (!got) {
+        missing += (missing.empty() ? "" : ", ") + std::string(name);
+      }
+    };
+
+    add_missing(got_control_info, "control_info");
+    add_missing(got_uav_state, "uav_state");
+    add_missing(got_general_robot_info, "general_robot_info");
+    add_missing(got_safety_area_check, "safety area check");
+
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 5000, "waiting for DiagnosticsManager: %s", missing.c_str());
+    error_publisher_->addWaitingForNodeError({"DiagnosticsManager", "main"});
+
+    data_was_ok_ = false;
+
+    return false;
+  }
+
+  // the first time, or back after a gap
+  if (!data_was_ok_) {
+    data_ok_since_ = clock_->now();
+    data_was_ok_   = true;
+  }
+
+  return true;
+}
+
+//}
+
+/* checkAlreadyFlying() //{ */
+
+// true when MRS already flies the UAV: automatic start finished
+bool AutomaticStart::checkAlreadyFlying(const Readings &readings) {
+
+  if (!isMrsFlying(readings.state)) {
+    return false;
+  }
+
+  RCLCPP_WARN(node_->get_logger(), "the UAV is already flying, nothing to start");
+  finish("already flying");
+
+  return true;
+}
+
+//}
+
+/* checkManual() //{ */
+
+// MANUAL, a pilot or the autopilot flies the UAV without offboard: enters MANUAL_PAUSE, see stateManualPause()
+void AutomaticStart::checkManual(const Readings &readings) {
+
+  if (readings.state != State::STATE_MANUAL || current_state_ == STATE_MANUAL_PAUSE) {
+    return;
+  }
+
+  RCLCPP_WARN(node_->get_logger(), "the UAV is flying without offboard (MANUAL), pausing");
+  changeState(STATE_MANUAL_PAUSE);
+  pause_step_                    = PAUSE_IN_MANUAL;
+  manual_since_                  = clock_->now();
+  we_turned_output_off_in_pause_ = false;
+}
+
+//}
+
+/* checkPossiblyInTheAir() //{ */
+
+// true when the UAV is possibly in the air (and not OFFBOARD): timerMain() must not go on with the waiting states
+mrs_lib::Task<bool> AutomaticStart::checkPossiblyInTheAir(const Readings &readings) {
+
+  if (readings.offboard || !isPossiblyInTheAir(readings.preflight)) {
+    co_return false;
+  }
+
+  RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "preflight check failed, the UAV is possibly in the air");
+
+  if (readings.armed) {
+    RCLCPP_WARN(node_->get_logger(), "the UAV is armed and possibly in the air, finishing to prevent an unwanted takeoff");
+
+    if (we_turned_output_on_) {
+      co_await callControlOutput(false);
+    }
+
+    finish("possibly in the air while armed");
+  }
+
+  co_return true;
+}
+
+//}
+
+// --------------------------------------------------------------
+// |                       state handlers                       |
+// --------------------------------------------------------------
+
+/* stateWaitingForArm() //{ */
+
+void AutomaticStart::stateWaitingForArm(const Readings &readings) {
+
+  if (readings.state == State::STATE_DISARMED) {
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 5000, "waiting for the pilot to arm");
+  } else {
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 5000, "waiting for a confirmed UAV state (NO_LINK or UNKNOWN)");
+  }
+}
+
+//}
+
+/* stateWaitingForOutput() //{ */
+
+// turns control output ON; the arm-to-output timeout disarms and finishes
+mrs_lib::Task<> AutomaticStart::stateWaitingForOutput(const Readings &readings) {
+
+  // counted from entering WAITING_FOR_OUTPUT (arming, a resume, the output dropping) or from the data coming back,
+  // so a late or returning input can't make us disarm right away
+  const rclcpp::Time waiting_since = std::max(state_since_, data_ok_since_);
+
+  if (readings.preflight.topics_ok && readings.preflight.position_valid) {
+    // asking again before ControlInfo shows the accepted ON would just make ControlManager complain
+    if (!isSet(output_on_time_) || (clock_->now() - output_on_time_).seconds() >= _output_on_confirm_timeout_) {
+      if (co_await callControlOutput(true)) {
+        we_turned_output_on_ = true;
+        output_on_time_      = clock_->now();
+      } else {
+        // a refused retry counts as not accepted, so the arm-to-output timeout can fire; we_turned_output_on_ is kept,
+        // the output may still be ON from our earlier call
+        output_on_time_ = time_zero_;
+      }
+    }
+  } else {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "not turning control output ON: topics_ok=%s, position_valid=%s",
+                         readings.preflight.topics_ok ? "true" : "FALSE", readings.preflight.position_valid ? "true" : "FALSE");
+  }
+
+  const bool accepted_while_waiting = isSet(output_on_time_) && output_on_time_ >= waiting_since;
+
+  if (accepted_while_waiting || (clock_->now() - waiting_since).seconds() <= _arm_to_output_timeout_) {
+    co_return;
+  }
+
+  if (started_armed_) {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
+                         "could not set control output ON for %.1f s, but the UAV was already armed when automatic start came up, not disarming",
+                         _arm_to_output_timeout_);
+    co_return;
+  }
+
+  RCLCPP_WARN(node_->get_logger(), "could not set control output ON for %.1f s, disarming", _arm_to_output_timeout_);
+  if (co_await callDisarm()) {
+    finish("control output could not be turned ON, disarmed");
+  } else {
+    finish("control output could not be turned ON, disarming failed");
+  }
+}
+
+//}
+
+/* stateCountdown() //{ */
+
+// the OFFBOARD countdown: takes off (or finishes, when not triggering the takeoff) once it runs out
+mrs_lib::Task<> AutomaticStart::stateCountdown(const Readings &readings) {
+
+  if (_simulation_ && isGazeboSimulation() && !spawnerReady()) {
+    co_return;
+  }
+
+  if (!_trigger_takeoff_) {
+    finish("takeoff left to someone else (trigger_takeoff = false)");
+    co_return;
+  }
+
+  // restarted after a data gap, so that the pilot always sees the full countdown before the takeoff
+  const double time_in_offboard = (clock_->now() - std::max(readings.offboard_since, data_ok_since_)).seconds();
+
+  if (time_in_offboard <= _takeoff_countdown_) {
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off in %.0f s (switch OFFBOARD off to abort)", (_takeoff_countdown_ - time_in_offboard));
+    co_return;
+  }
+
+  if (!co_await callTakeoff()) {
+    finish("takeoff refused");
+    co_return;
+  }
+
+  takeoff_time_ = clock_->now();
+
+  changeState(STATE_TAKEOFF);
+}
+
+//}
+
+/* stateManualPause() //{ */
+
+// keeps control output OFF so MRS can't take over (OFFBOARD finds no setpoints); a short MANUAL is an aborted OFFBOARD
+// on the ground and resumes, a long one is a real flight and the pilot must disarm and arm again;
+// true while paused: timerMain() must not go on with the other checks
+mrs_lib::Task<bool> AutomaticStart::stateManualPause(const Readings &readings) {
+
+  const bool manual_too_long = (clock_->now() - manual_since_).seconds() >= _manual_resume_timeout_;
+
+  if (readings.state == State::STATE_MANUAL) {
+    if (pause_step_ != PAUSE_NEEDS_REARM) {
+      changePauseStep(manual_too_long ? PAUSE_NEEDS_REARM : PAUSE_IN_MANUAL);
+    }
+
+    if (we_turned_output_on_) {
+      if (co_await callControlOutput(false)) {
+        we_turned_output_on_           = false;
+        we_turned_output_off_in_pause_ = true;
+      }
+    } else if (readings.control_output_enabled && !we_turned_output_off_in_pause_) {
+      RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "control output is ON during MANUAL, but automatic start did not turn it on");
+    }
+
+    armed_stable_since_ = time_zero_;
+    co_return true;
+  }
+
+  // timerMain() then switches to the waiting state that matches the inputs
+  if (readings.state == State::STATE_DISARMED) {
+    RCLCPP_INFO(node_->get_logger(), "disarmed after MANUAL, starting over");
+    co_return false;
+  }
+
+  if (pause_step_ == PAUSE_NEEDS_REARM) {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 5000, "the UAV has flown without offboard, disarm and arm again to use automatic start");
+    co_return true;
+  }
+
+  if (!readings.armed) {
+    // NO_LINK / UNKNOWN: neither a disarm nor a landing -- stay paused; the UAV may still be flying manually, so a
+    // long blind pause counts towards the MANUAL duration as well
+    changePauseStep(manual_too_long ? PAUSE_NEEDS_REARM : PAUSE_UNCONFIRMED);
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "paused, UAV state not confirmed (NO_LINK to the autopilot, or UNKNOWN)");
+    armed_stable_since_ = time_zero_;
+    co_return true;
+  }
+
+  changePauseStep(PAUSE_SETTLING);
+
+  // the preflight heuristics lag behind a UAV that just moved (e.g. PX4's landing descent); resuming now would
+  // let the "armed + possibly in the air" check finish automatic start, so wait for them to settle first
+  if (!readings.offboard && isPossiblyInTheAir(readings.preflight)) {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "paused after MANUAL, waiting for the UAV to settle before resuming");
+    armed_stable_since_ = time_zero_;
+    co_return true;
+  }
+
+  if (!isSet(armed_stable_since_)) {
+    armed_stable_since_ = clock_->now();
+  }
+
+  if ((clock_->now() - armed_stable_since_).seconds() < _manual_resume_delay_) {
+    co_return true;
+  }
+
+  RCLCPP_INFO(node_->get_logger(), "MANUAL was short (aborted OFFBOARD), resuming");
+
+  co_return false;
+}
+
+//}
+
+/* stateTakeoff() //{ */
+
+// waits for the takeoff to finish: flying normally, interrupted, or takeoff_timeout
+void AutomaticStart::stateTakeoff(const Readings &readings) {
+
+  if (readings.flying_normally) {
+    finish("takeoff finished");
+    return;
+  }
+
+  if (isTakeoffInterrupted(readings.state)) {
+    finish(std::string("takeoff interrupted (") + stateName(readings.state) + ")");
+    return;
+  }
+
+  if ((clock_->now() - takeoff_time_).seconds() > _takeoff_timeout_) {
+    finish(std::format("takeoff did not finish within {:.0f} s", _takeoff_timeout_));
+    return;
+  }
+
+  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 5000, "waiting for the takeoff to finish");
+}
+
+//}
+
+// --------------------------------------------------------------
+// |                       service calls                        |
+// --------------------------------------------------------------
+
+/* callTakeoff() //{ */
+
+mrs_lib::Task<bool> AutomaticStart::callTakeoff() {
+
+  RCLCPP_INFO(node_->get_logger(), ">>> calling takeoff");
 
   std::shared_ptr<std_srvs::srv::Trigger::Request> request = std::make_shared<std_srvs::srv::Trigger::Request>();
 
   auto response = co_await service_client_takeoff_.callAwaitable(request);
 
-  if (response) {
-
-    if (response.value()->success) {
-
-      co_return true;
-
-    } else {
-
-      RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off failed: %s", response.value()->message.c_str());
-    }
-
-  } else {
-
-    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "service call for taking off failed");
+  if (!response) {
+    RCLCPP_ERROR(node_->get_logger(), "<<< no answer from uav_manager/takeoff");
+    co_return false;
   }
 
-  co_return false;
+  if (!response.value()->success) {
+    RCLCPP_ERROR(node_->get_logger(), "<<< takeoff refused: %s", response.value()->message.c_str());
+    co_return false;
+  }
+
+  RCLCPP_INFO(node_->get_logger(), "<<< takeoff accepted");
+
+  co_return true;
 }
 
 //}
 
-/* toggleControlOutput() //{ */
+/* callControlOutput() //{ */
 
-mrs_lib::Task<bool> AutomaticStart::toggleControlOutput(const bool &value) {
+mrs_lib::Task<bool> AutomaticStart::callControlOutput(const bool enabled) {
 
-  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "setting control output %s", value ? "ON" : "OFF");
+  // throttled because a failed call is repeated on every tick; separate call sites, so that the throttle can not
+  // swallow an OFF right after an ON
+  if (enabled) {
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, ">>> turning control output ON");
+  } else {
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, ">>> turning control output OFF");
+  }
 
   std::shared_ptr<std_srvs::srv::SetBool::Request> request = std::make_shared<std_srvs::srv::SetBool::Request>();
 
-  request->data = value;
+  request->data = enabled;
 
   auto response = co_await service_client_toggle_control_output_.callAwaitable(request);
 
-  if (response) {
-
-    if (response.value()->success) {
-
-      co_return true;
-
-    } else {
-
-      RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "setting of control output failed: %s", response.value()->message.c_str());
-    }
-
-  } else {
-
-    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "service call for toggling control output failed");
+  if (!response) {
+    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "<<< no answer from control_manager/toggle_output");
+    co_return false;
   }
 
-  co_return false;
+  if (!response.value()->success) {
+    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "<<< turning control output %s failed: %s", enabled ? "ON" : "OFF",
+                          response.value()->message.c_str());
+    co_return false;
+  }
+
+  if (enabled) {
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "<<< control output is ON");
+  } else {
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "<<< control output is OFF");
+  }
+
+  co_return true;
 }
 
 //}
 
-/* disarm() //{ */
+/* callDisarm() //{ */
 
-mrs_lib::Task<bool> AutomaticStart::disarm() {
+mrs_lib::Task<bool> AutomaticStart::callDisarm() {
 
-  if (!hw_api_connected_) {
-
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "cannot disarm, missing HW API status!");
-
+  if (mrs_lib::get_mutexed(mutex_uav_state_, uav_state_) == State::STATE_OFFBOARD) {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "cannot disarm, the UAV is in OFFBOARD");
     co_return false;
   }
 
-  auto [armed, offboard, armed_time, offboard_time] = mrs_lib::get_mutexed(mutex_hw_api_status_, armed_, offboard_, armed_time_, offboard_time_);
-
-  if (offboard) {
-
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "cannot disarm, already in offboard mode!");
-
-    co_return false;
-  }
-
-  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "disarming");
+  RCLCPP_INFO(node_->get_logger(), ">>> disarming");
 
   std::shared_ptr<std_srvs::srv::SetBool::Request> request = std::make_shared<std_srvs::srv::SetBool::Request>();
 
@@ -818,77 +800,26 @@ mrs_lib::Task<bool> AutomaticStart::disarm() {
 
   auto response = co_await service_client_arm_.callAwaitable(request);
 
-  if (response) {
-
-    if (response.value()->success) {
-
-      co_return true;
-
-    } else {
-
-      RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "disarming failed");
-    }
-
-  } else {
-
-    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "service call for disarming failed");
+  if (!response) {
+    RCLCPP_ERROR(node_->get_logger(), "<<< no answer from hw_api/arming");
+    co_return false;
   }
 
-  co_return false;
+  if (!response.value()->success) {
+    RCLCPP_ERROR(node_->get_logger(), "<<< disarming failed: %s", response.value()->message.c_str());
+    co_return false;
+  }
+
+  RCLCPP_INFO(node_->get_logger(), "<<< disarmed");
+
+  co_return true;
 }
 
 //}
 
-/* hasObsoleteParams() //{ */
-
-// An obsolete key would otherwise be silently ignored and fall back to the default -- e.g. an old
-// "handle_takeoff: false" would make us take off on our own. Refuse to start instead.
-bool AutomaticStart::hasObsoleteParams(const std::string &custom_config_path) {
-
-  if (custom_config_path.empty()) {
-    return false;
-  }
-
-  // old name -> new name
-  const std::vector<std::pair<std::string, std::string>> obsolete_params = {
-      {"safety_timeout", "mrs_uav_autostart/takeoff_countdown"},
-      {"handle_takeoff", "mrs_uav_autostart/trigger_takeoff"},
-      {"control_output_timeout", "mrs_uav_autostart/arm_to_output_timeout"},
-      {"pre_takeoff_sleep", "mrs_uav_autostart/takeoff_countdown"},
-  };
-
-  const YAML::Node config = YAML::LoadFile(custom_config_path);
-
-  if (!config.IsMap()) {
-    return false;
-  }
-
-  // a missing key gives an invalid node: test it with operator bool before calling IsMap() on it
-  const YAML::Node section = config["mrs_uav_autostart"];
-
-  bool found = false;
-
-  const auto report = [&](const std::string &name, const std::string &new_name) {
-    RCLCPP_ERROR(node_->get_logger(), "obsolete parameter '%s' found in custom_config, use '%s' instead", name.c_str(), new_name.c_str());
-    error_publisher_->addOneshotError("obsolete parameter '" + name + "' in custom_config");
-    found = true;
-  };
-
-  for (const auto &[old_name, new_name] : obsolete_params) {
-
-    if (config[old_name]) {
-      report(old_name, new_name);
-    }
-
-    if (section && section.IsMap() && section[old_name]) {
-      report("mrs_uav_autostart/" + old_name, new_name);
-    }
-  }
-
-  return found;
-}
-
-//}
+// --------------------------------------------------------------
+// |                         simulation                         |
+// --------------------------------------------------------------
 
 /* isGazeboSimulation() //{ */
 
@@ -911,157 +842,83 @@ bool AutomaticStart::isGazeboSimulation(void) {
 
 //}
 
-/* topicCheck() //{ */
+/* spawnerReady() //{ */
 
-bool AutomaticStart::topicCheck(void) {
+bool AutomaticStart::spawnerReady(void) {
 
-  bool got_topics = true;
+  std::scoped_lock lock(mutex_gazebo_spawner_diagnostics_);
 
-  std::stringstream missing_topics;
+  if (!got_gazebo_spawner_diagnostics_) {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) missing spawner diagnostics");
+    return false;
+  }
 
-  if (_topic_check_enabled_) {
+  if (!gazebo_spawner_diagnostics_.spawn_called || gazebo_spawner_diagnostics_.processing) {
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) waiting for spawner to finish spawning UAVs");
+    return false;
+  }
 
-    for (int i = 0; i < int(topic_check_topics_.size()); i++) {
+  return true;
+}
 
-      if (topic_check_topics_.at(i).getTime().seconds() == 0 || (clock_->now() - topic_check_topics_.at(i).getTime()).seconds() > _topic_check_timeout_) {
+//}
 
-        missing_topics << std::endl << "\t" << topic_check_topics_.at(i).getTopicName();
-        got_topics = false;
-      }
+// --------------------------------------------------------------
+// |                           params                           |
+// --------------------------------------------------------------
+
+/* hasObsoleteParams() //{ */
+
+// An obsolete key would otherwise be silently ignored and fall back to the default -- e.g. an old
+// "handle_takeoff: false" would make us take off on our own. Refuse to start instead.
+bool AutomaticStart::hasObsoleteParams(const std::string &custom_config_path) {
+
+  if (custom_config_path.empty()) {
+    return false;
+  }
+
+  // old name -> new name
+  const std::vector<std::pair<std::string, std::string>> obsolete_params = {
+      {"safety_timeout", "mrs_uav_autostart/takeoff_countdown"},
+      {"handle_takeoff", "mrs_uav_autostart/trigger_takeoff"},
+      {"control_output_timeout", "mrs_uav_autostart/arm_to_output_timeout"},
+      {"pre_takeoff_sleep", "mrs_uav_autostart/takeoff_countdown"},
+      {"preflight_check", "mrs_uav_managers/diagnostics_manager/preflight_check"},
+  };
+
+  const YAML::Node config = YAML::LoadFile(custom_config_path);
+
+  if (!config.IsMap()) {
+    return false;
+  }
+
+  // a missing key gives an invalid node: test it with operator bool before calling IsMap() on it
+  const YAML::Node section = config["mrs_uav_autostart"];
+
+  bool found = false;
+
+  const auto report = [&](const std::string &name, const std::string &new_name) {
+    RCLCPP_ERROR(node_->get_logger(), "obsolete parameter '%s' found in custom_config, use '%s' instead", name.c_str(), new_name.c_str());
+    error_publisher_->addOneshotError("obsolete parameter '" + name + "' in custom_config");
+    found = true;
+  };
+
+  for (const auto &[old_name, new_name] : obsolete_params) {
+    if (config[old_name]) {
+      report(old_name, new_name);
+    }
+
+    if (section && section.IsMap() && section[old_name]) {
+      report("mrs_uav_autostart/" + old_name, new_name);
     }
   }
 
-  if (!got_topics) {
-    RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "missing data on topics: " << missing_topics.str());
-  }
-
-  return got_topics;
+  return found;
 }
 
 //}
-
-// | -------- preflight cheks for detecting flyign UAV -------- |
-
-/* preflightCheckSpeed() //{ */
-
-bool AutomaticStart::preflightCheckSpeed(void) {
-
-  if (!_speed_check_enabled_) {
-    return true;
-  }
-
-  if (!sh_estimation_diag_.hasMsg()) {
-    return false;
-  }
-
-  auto estimation_diag = sh_estimation_diag_.getMsg();
-
-  double speed = std::hypot(estimation_diag->velocity.linear.x, estimation_diag->velocity.linear.y, estimation_diag->velocity.linear.z);
-
-  if (speed > _speed_check_max_speed_) {
-    speed_check_violated_time_ = clock_->now();
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "the estimated speed (%.2f ms^-2) is over the limit (%.2f ms^-2)", speed, _speed_check_max_speed_);
-  }
-
-  if (speed_check_violated_time_.seconds() > 0 && (clock_->now() - speed_check_violated_time_).seconds() < _preflight_check_time_window_) {
-    return false;
-  } else {
-    return true;
-  }
-}
-
-//}
-
-/* preflighCheckHeight() //{ */
-
-bool AutomaticStart::preflighCheckHeight(void) {
-
-  if (!_height_check_enabled_) {
-    return true;
-  }
-
-  // | ----------------- is the check possible? ----------------- |
-
-  if (!sh_hw_api_capabilities_.hasMsg()) {
-    return false;
-  }
-
-  auto capabilities = sh_hw_api_capabilities_.getMsg();
-
-  if (!capabilities->produces_distance_sensor) {
-    return true;
-  }
-
-  // | -------------------- do we have data? -------------------- |
-
-  if (!sh_distance_sensor_.hasMsg()) {
-    return true;
-  }
-
-  double height = sh_distance_sensor_.getMsg()->range;
-
-  if (height > _height_check_max_height_) {
-    height_check_violated_time_ = clock_->now();
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "the height (%.2f m) is over the limit (%.2f m)", height, _height_check_max_height_);
-  }
-
-  if (height_check_violated_time_.seconds() > 0 && (clock_->now() - height_check_violated_time_).seconds() < _preflight_check_time_window_) {
-    return false;
-  } else {
-    return true;
-  }
-}
-
-//}
-
-/* preflighCheckGyro() //{ */
-
-bool AutomaticStart::preflighCheckGyro(void) {
-
-  if (!_gyro_check_enabled_) {
-    return true;
-  }
-
-  // | ----------------- is the check possible? ----------------- |
-
-  if (!sh_hw_api_capabilities_.hasMsg()) {
-    return false;
-  }
-
-  auto capabilities = sh_hw_api_capabilities_.getMsg();
-
-  if (!capabilities->produces_imu) {
-    return true;
-  }
-
-  // | -------------------- do we have data? -------------------- |
-
-  if (!sh_imu_.hasMsg()) {
-    return true;
-  }
-
-  auto gyros = sh_imu_.getMsg()->angular_velocity;
-
-  if (abs(gyros.x) > _gyro_check_max_rate_ || abs(gyros.y) > _gyro_check_max_rate_ || abs(gyros.z) > _gyro_check_max_rate_) {
-    gyro_check_violated_time_ = clock_->now();
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
-                         "the angular velocity ([%.2f, %.2f, %.2f] rad/s) is "
-                         "over the limit (%.2f rad/s)",
-                         gyros.x, gyros.y, gyros.z, _gyro_check_max_rate_);
-  }
-
-  if (gyro_check_violated_time_.seconds() > 0 && (clock_->now() - gyro_check_violated_time_).seconds() < _preflight_check_time_window_) {
-    return false;
-  } else {
-    return true;
-  }
-}
-
-//}
-
-} // namespace automatic_start
 
 } // namespace mrs_uav_autostart
 
 #include <rclcpp_components/register_node_macro.hpp>
-RCLCPP_COMPONENTS_REGISTER_NODE(mrs_uav_autostart::automatic_start::AutomaticStart)
+RCLCPP_COMPONENTS_REGISTER_NODE(mrs_uav_autostart::AutomaticStart)
