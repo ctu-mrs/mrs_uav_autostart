@@ -8,7 +8,7 @@ mrs_uav_autostart:
   # OFF. Shorter than this, it is treated as an aborted OFFBOARD on the ground (the pilot lowered the sticks and
   # PX4 detected the landing): automatic start resumes. Longer, it is a real flight: the pilot must disarm and arm
   # again to start over.
-  manual_abort_max_duration: 5.0 # [s]
+  manual_resume_timeout: 5.0 # [s]
 
   # true: trigger the takeoff (uav_manager/takeoff) once the countdown elapses
   # false: perform all checks and enable control output, but leave calling

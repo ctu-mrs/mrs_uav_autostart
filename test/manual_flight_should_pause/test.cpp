@@ -98,7 +98,7 @@ bool Tester::test(void) {
   // counted from the output OFF: a duplicate ON sent before MANUAL was seen (control_info lagging) lands before it
   const int on_calls_before_pause = output_on_calls; // output must stay OFF throughout the pause, not only when sampled
 
-  sleep(7.0); // MANUAL longer than manual_abort_max_duration (5 s) -> a real flight
+  sleep(7.0); // MANUAL longer than manual_resume_timeout (5 s) -> a real flight
 
   state = mrs_msgs::msg::State::STATE_NO_LINK; // link loss is not a disarm: must keep the pause and the rearm requirement
   sleep(2.0);
@@ -130,10 +130,10 @@ bool Tester::test(void) {
   if (!wait_for([&] { return !output_enabled; }, 2.0)) {
     return fail("automatic_start did not turn its output off on the second MANUAL");
   }
-  sleep(1.5); // MANUAL ~2 s in total, shorter than manual_abort_max_duration
+  sleep(1.5); // MANUAL ~2 s in total, shorter than manual_resume_timeout
 
   state = mrs_msgs::msg::State::STATE_NO_LINK;
-  sleep(5.5); // MANUAL + NO_LINK together longer than manual_abort_max_duration
+  sleep(5.5); // MANUAL + NO_LINK together longer than manual_resume_timeout
 
   state = mrs_msgs::msg::State::STATE_ARMED;
   sleep(3.0);
