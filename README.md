@@ -23,9 +23,16 @@ was moved onto DiagnosticsManager):
   must disarm and arm again. Before, there was no pause: the "possibly in the air" check finished
   automatic start for good.
 - **Disarming by automatic start**: still only when it cannot turn control output ON within
-  `arm_to_output_timeout` (1.5 s) after the pilot armed. The timeout now also waits until the
-  DiagnosticsManager data is available, and automatic start never disarms a UAV that the pilot armed
-  before automatic start came up. Before, such a UAV was disarmed 1.5 s after the data arrived.
+  `arm_to_output_timeout` (1.5 s). The timeout now counts from entering `WAITING_FOR_OUTPUT` (the
+  pilot armed, a resume, or the output dropped OFF) and waits until the DiagnosticsManager data is
+  available, and automatic start never disarms a UAV that the pilot armed before automatic start
+  came up. Before, it counted from the arming, so such a UAV was disarmed 1.5 s after the data
+  arrived, and a short output dropout long after arming disarmed right away.
+- **Control output ON is requested once**: after toggle_output accepts it, automatic start waits
+  `output_on_confirm_timeout` (1 s) for ControlInfo to show it before asking again. Before, it
+  asked on every tick until ControlInfo caught up, and ControlManager logged "already ON".
+- **Explicit states**: the old `IDLE` is split into the states below, and every state change is
+  logged at INFO, together with `>>>`/`<<<` lines around each service call.
 - **Takeoff monitoring**: after calling `uav_manager/takeoff`, automatic start finishes when the
   takeoff is interrupted (`DISARMED`, `ARMED`, `MANUAL`, `LAND`, `EHOVER`, `ELAND`, `FAILSAFE`) or
   the UAV is not flying normally within `takeoff_timeout` (60 s). Before, it waited for the takeoff
@@ -35,8 +42,9 @@ was moved onto DiagnosticsManager):
   data only had to arrive once.
 - **Errorgraph**: missing data is reported as waiting for DiagnosticsManager. The first ROS2 port
   reported each manager separately; the ROS1 version had no errorgraph.
-- **Parameters**: new `manual_resume_timeout` (5 s), `takeoff_timeout` (60 s) and
-  `diagnostics_manager_timeout` (3 s); `preflight_check/*` removed (see above). Since the first ROS2
+- **Parameters**: new `manual_resume_timeout` (5 s), `takeoff_timeout` (60 s),
+  `diagnostics_manager_timeout` (3 s), `output_on_confirm_timeout` (1 s) and `manual_resume_delay`
+  (1 s); `preflight_check/*` removed (see above). Since the first ROS2
   port: `safety_timeout` is `takeoff_countdown`, `handle_takeoff` is `trigger_takeoff`,
   `control_output_timeout` is `arm_to_output_timeout`, `pre_takeoff_sleep` and `body_frame_name` are
   gone, and an old parameter name in a custom config stops the node.
@@ -66,6 +74,8 @@ stateDiagram-v2
   WAITING_FOR_OUTPUT --> WAITING_FOR_OFFBOARD: topics_ok and position_valid<br/>→ automatic start turns output ON
   WAITING_FOR_OFFBOARD --> COUNTDOWN: pilot switches OFFBOARD on
   COUNTDOWN --> WAITING_FOR_OFFBOARD: pilot switches OFFBOARD off,<br/>not MANUAL (abort)
+  WAITING_FOR_OFFBOARD --> WAITING_FOR_OUTPUT: output dropped OFF (3)
+  COUNTDOWN --> WAITING_FOR_OUTPUT: output dropped OFF (3)
   WAITING_FOR_OUTPUT --> WAITING_FOR_ARM: pilot / PX4 disarms,<br/>or NO_LINK / UNKNOWN (12)
   WAITING_FOR_OFFBOARD --> WAITING_FOR_ARM: pilot / PX4 disarms,<br/>or NO_LINK / UNKNOWN (12)
   COUNTDOWN --> WAITING_FOR_ARM: PX4 disarms,<br/>or NO_LINK / UNKNOWN (12)
@@ -124,13 +134,14 @@ Every tick of `timerMain()` runs, in this order:
    (3 s), e.g. because DiagnosticsManager died, every state (`TAKEOFF` too) pauses until the data
    is back. `WAITING_FOR_DATA` is drawn, but it is this check, not a state of its own.
 2. In `TAKEOFF`, only the takeoff is watched (`stateTakeoff()`), nothing below.
-3. `checkAlreadyFlying()` (note 1).
-4. `checkManual()` (note 4): enters `MANUAL_PAUSE`; while paused, `stateManualPause()` handles
+3. `ready_to_enable_control_output` (`topics_ok` and `position_valid`) is published.
+4. `checkAlreadyFlying()` (note 1).
+5. `checkManual()` (note 4): enters `MANUAL_PAUSE`; while paused, `stateManualPause()` handles
    the tick and nothing below runs.
-5. The state is set from the current inputs (armed? control output ON? OFFBOARD?), so a missed
+6. The state is set from the current inputs (armed? control output ON? OFFBOARD?), so a missed
    reading can't leave automatic start in a stale state.
-6. `checkPossiblyInTheAir()` (note 2).
-7. The handler of the state (`stateWaitingForArm()`, `stateWaitingForOutput()`,
+7. `checkPossiblyInTheAir()` (note 2).
+8. The handler of the state (`stateWaitingForArm()`, `stateWaitingForOutput()`,
    `stateCountdown()`).
 
 Each state change is logged (`switching states A -> B`, `MANUAL_PAUSE: A -> B`).
@@ -145,15 +156,15 @@ Notes:
 2. **Possibly in the air**: not OFFBOARD, a preflight speed / height / gyro check failed, and the
    UAV is armed. If automatic start turned control output ON, it turns it OFF again, then finishes.
    While **not armed** it only warns and keeps waiting. This check can't fire during a
-   `MANUAL_PAUSE` (`checkManual()` runs first), and the `SETTLING` wait (note 7) keeps it from firing right after
-   a resume.
+   `MANUAL_PAUSE` (`checkManual()` runs first), and the `SETTLING` wait (note 7) keeps it from
+   firing right after a resume.
 3. **Output not ON in time**: toggle_output did not accept an ON within `arm_to_output_timeout`
-   (1.5 s) of entering `WAITING_FOR_OUTPUT` (the pilot armed, a resume, or the output dropped
-   OFF) or of the data becoming available, e.g. because a topic check or the safety area check
-   fails. Automatic start then disarms the UAV and finishes. This is the only case in which it disarms. It does not disarm if the UAV was already
-   armed when automatic start came up: then it only warns and keeps waiting. An accepted ON is not
-   repeated for 1 s, as ControlInfo shows it only a moment later; a refused repeat lets the timeout
-   fire again.
+   (1.5 s) of entering `WAITING_FOR_OUTPUT` (the pilot armed, a resume, or the output dropped OFF)
+   or of the data becoming available, e.g. because a topic check or the safety area check fails.
+   Automatic start then disarms the UAV and finishes. This is the only case in which it disarms. It
+   does not disarm if the UAV was already armed when automatic start came up: then it only warns and
+   keeps waiting. An accepted ON is not repeated for `output_on_confirm_timeout` (1 s), as
+   ControlInfo shows it only a moment later; a refused repeat lets the timeout fire again.
 4. **`MANUAL`**: the pilot (or the autopilot itself) is flying without offboard. Automatic start
    keeps control output OFF for the whole pause, so MRS can't take over when the pilot switches
    OFFBOARD on again (it would find no setpoints). `uav_state == MANUAL` requires the UAV to be
@@ -170,8 +181,9 @@ Notes:
    speed/height/gyro heuristics still say "possibly in the air" and the UAV isn't OFFBOARD yet —
    otherwise resuming would immediately trip the "possibly in the air + armed" finish check (note 2)
    right after the pause.
-8. Resume requires `armed` to be stable (uninterrupted) for 1 s once `SETTLING`'s condition
-   clears. The state after the resume follows from the inputs, normally `WAITING_FOR_OUTPUT`.
+8. Resume requires `armed` to be stable (uninterrupted) for `manual_resume_delay` (1 s) once
+   `SETTLING`'s condition clears. The state after the resume follows from the inputs, normally
+   `WAITING_FOR_OUTPUT`.
 9. A disarm by the pilot or PX4 ends the pause from any step (short or long) and automatic start
    continues from `WAITING_FOR_ARM`, so the pilot's next arm is a fresh start (the arm-to-output
    timeout counts from the new arming). `started_armed_` is **not** reset — it is latched once,
@@ -201,8 +213,8 @@ Notes:
 ### Transitions and the tests that cover them
 
 The simulation tests are in `test/<name>/`. How every `uav_state` is classified
-(`include/mrs_uav_autostart/state_checks.hpp`: confirmed, armed, flown by MRS, takeoff interrupted), and the "possibly in the air" preflight check
-are unit-tested in `test/state_checks`.
+(`include/mrs_uav_autostart/state_checks.hpp`: confirmed, armed, flown by MRS, takeoff interrupted)
+and the "possibly in the air" preflight check are unit-tested in `test/state_checks`.
 
 | Transition                                                                                                                                   | Test (`test/`)                                                                                          |
 |----------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
@@ -237,3 +249,5 @@ are unit-tested in `test/state_checks`.
 | `TAKEOFF` → `FINISHED`: takeoff interrupted (`MANUAL`), finishes without touching output or arming                                           | `takeoff_interrupted_should_finish`                                                                     |
 | `TAKEOFF` stays: `NO_LINK`/`UNKNOWN` is not an interruption, then `FINISHED` (flying normally)                                               | `takeoff_no_link_should_keep_waiting`                                                                   |
 | `TAKEOFF` → `FINISHED`: `takeoff_timeout`, finishes without touching output or arming                                                        | `takeoff_timeout_should_finish`                                                                         |
+| `WAITING_FOR_OUTPUT` → `WAITING_FOR_OFFBOARD`: an accepted ON is not requested again while ControlInfo lags                                  | `output_on_should_be_requested_once` (exactly one ON call)                                              |
+| `WAITING_FOR_OFFBOARD` → `WAITING_FOR_OUTPUT` → `FINISHED`: the output drops OFF long after arming, ON and disarm refused                    | `output_dropout_should_not_disarm_at_once` (no disarm for 1 s, "disarming failed" after the timeout)    |
