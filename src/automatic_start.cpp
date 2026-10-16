@@ -229,52 +229,52 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
     co_return;
   }
 
-  const UavSnapshot uav = takeUavSnapshot();
+  const Readings readings = takeReadings();
 
   if (current_state_ == STATE_TAKEOFF) {
-    stateTakeoff(uav);
+    stateTakeoff(readings);
     co_return;
   }
 
   std_msgs::msg::Bool ready_to_enable_control_output_msg;
-  ready_to_enable_control_output_msg.data = uav.preflight.topics_ok && uav.preflight.position_valid;
+  ready_to_enable_control_output_msg.data = readings.preflight.topics_ok && readings.preflight.position_valid;
   ph_ready_to_enable_control_output_.publish(ready_to_enable_control_output_msg);
 
   // | -------- global checks, before the state handlers -------- |
 
-  if (checkAlreadyFlying(uav)) {
+  if (checkAlreadyFlying(readings)) {
     co_return;
   }
 
-  checkManual(uav);
+  checkManual(readings);
 
   if (current_state_ == STATE_MANUAL_PAUSE) {
-    if (co_await stateManualPause(uav)) {
+    if (co_await stateManualPause(readings)) {
       co_return;
     }
   }
 
   // | ---- the waiting state follows from the current inputs ---- |
 
-  const AutostartState_t waiting_state = waitingState(uav);
+  const AutostartState_t waiting_state = waitingState(readings);
 
   if (waiting_state != current_state_) {
     changeState(waiting_state);
   }
 
   // after the state change: while it holds, the state still has to follow e.g. a disarm
-  if (co_await checkPossiblyInTheAir(uav)) {
+  if (co_await checkPossiblyInTheAir(readings)) {
     co_return;
   }
 
   switch (current_state_) {
   case STATE_WAITING_FOR_ARM: {
-    stateWaitingForArm(uav);
+    stateWaitingForArm(readings);
     break;
   }
 
   case STATE_WAITING_FOR_OUTPUT: {
-    co_await stateWaitingForOutput(uav);
+    co_await stateWaitingForOutput(readings);
     break;
   }
 
@@ -284,7 +284,7 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
   }
 
   case STATE_COUNTDOWN: {
-    co_await stateCountdown(uav);
+    co_await stateCountdown(readings);
     break;
   }
 
@@ -296,27 +296,27 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
 //}
 
-/* takeUavSnapshot() //{ */
+/* takeReadings() //{ */
 
 // called after checkDataReady(), so all the messages are there
-UavSnapshot AutomaticStart::takeUavSnapshot() {
+Readings AutomaticStart::takeReadings() {
 
-  UavSnapshot uav;
+  Readings readings;
 
-  std::tie(uav.state, uav.offboard_since) = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_, offboard_since_);
+  std::tie(readings.state, readings.offboard_since) = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_, offboard_since_);
 
-  uav.armed    = isArmed(uav.state);
-  uav.offboard = uav.state == State::STATE_OFFBOARD;
+  readings.armed    = isArmed(readings.state);
+  readings.offboard = readings.state == State::STATE_OFFBOARD;
 
   const auto control_info = sh_control_info_.getMsg();
 
   // safe to read directly: output_enabled defaults to false whenever its source was invalid
-  uav.control_output_enabled = control_info->output_enabled;
-  uav.flying_normally        = control_info->flying_normally;
+  readings.control_output_enabled = control_info->output_enabled;
+  readings.flying_normally        = control_info->flying_normally;
 
-  uav.preflight = sh_general_robot_info_.getMsg()->preflight_status;
+  readings.preflight = sh_general_robot_info_.getMsg()->preflight_status;
 
-  return uav;
+  return readings;
 }
 
 //}
@@ -365,17 +365,17 @@ void AutomaticStart::changePauseStep(PauseStep_t new_step) {
 /* waitingState() //{ */
 
 // the waiting state that matches the current inputs; MANUAL_PAUSE is handled before, see stateManualPause()
-AutostartState_t AutomaticStart::waitingState(const UavSnapshot &uav) {
+AutostartState_t AutomaticStart::waitingState(const Readings &readings) {
 
-  if (!uav.armed) {
+  if (!readings.armed) {
     return STATE_WAITING_FOR_ARM;
   }
 
-  if (!uav.control_output_enabled) {
+  if (!readings.control_output_enabled) {
     return STATE_WAITING_FOR_OUTPUT;
   }
 
-  if (!uav.offboard) {
+  if (!readings.offboard) {
     return STATE_WAITING_FOR_OFFBOARD;
   }
 
@@ -455,9 +455,9 @@ bool AutomaticStart::checkDataReady() {
 /* checkAlreadyFlying() //{ */
 
 // true when MRS already flies the UAV: automatic start finished
-bool AutomaticStart::checkAlreadyFlying(const UavSnapshot &uav) {
+bool AutomaticStart::checkAlreadyFlying(const Readings &readings) {
 
-  if (!isMrsFlying(uav.state)) {
+  if (!isMrsFlying(readings.state)) {
     return false;
   }
 
@@ -472,9 +472,9 @@ bool AutomaticStart::checkAlreadyFlying(const UavSnapshot &uav) {
 /* checkManual() //{ */
 
 // MANUAL, a pilot or the autopilot flies the UAV without offboard: enters MANUAL_PAUSE, see stateManualPause()
-void AutomaticStart::checkManual(const UavSnapshot &uav) {
+void AutomaticStart::checkManual(const Readings &readings) {
 
-  if (uav.state != State::STATE_MANUAL || current_state_ == STATE_MANUAL_PAUSE) {
+  if (readings.state != State::STATE_MANUAL || current_state_ == STATE_MANUAL_PAUSE) {
     return;
   }
 
@@ -490,15 +490,15 @@ void AutomaticStart::checkManual(const UavSnapshot &uav) {
 /* checkPossiblyInTheAir() //{ */
 
 // true when the UAV is possibly in the air (and not OFFBOARD): timerMain() must not go on with the waiting states
-mrs_lib::Task<bool> AutomaticStart::checkPossiblyInTheAir(const UavSnapshot &uav) {
+mrs_lib::Task<bool> AutomaticStart::checkPossiblyInTheAir(const Readings &readings) {
 
-  if (uav.offboard || !isPossiblyInTheAir(uav.preflight)) {
+  if (readings.offboard || !isPossiblyInTheAir(readings.preflight)) {
     co_return false;
   }
 
   RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "preflight check failed, the UAV is possibly in the air");
 
-  if (uav.armed) {
+  if (readings.armed) {
     RCLCPP_WARN(node_->get_logger(), "the UAV is armed and possibly in the air, finishing to prevent an unwanted takeoff");
 
     if (we_turned_output_on_) {
@@ -519,9 +519,9 @@ mrs_lib::Task<bool> AutomaticStart::checkPossiblyInTheAir(const UavSnapshot &uav
 
 /* stateWaitingForArm() //{ */
 
-void AutomaticStart::stateWaitingForArm(const UavSnapshot &uav) {
+void AutomaticStart::stateWaitingForArm(const Readings &readings) {
 
-  if (uav.state == State::STATE_DISARMED) {
+  if (readings.state == State::STATE_DISARMED) {
     RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 5000, "waiting for the pilot to arm");
   } else {
     RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 5000, "waiting for a confirmed UAV state (NO_LINK or UNKNOWN)");
@@ -533,13 +533,13 @@ void AutomaticStart::stateWaitingForArm(const UavSnapshot &uav) {
 /* stateWaitingForOutput() //{ */
 
 // turns control output ON; the arm-to-output timeout disarms and finishes
-mrs_lib::Task<> AutomaticStart::stateWaitingForOutput(const UavSnapshot &uav) {
+mrs_lib::Task<> AutomaticStart::stateWaitingForOutput(const Readings &readings) {
 
   // counted from entering WAITING_FOR_OUTPUT (arming, a resume, the output dropping) or from the data coming back,
   // so a late or returning input can't make us disarm right away
   const rclcpp::Time waiting_since = std::max(state_since_, data_ok_since_);
 
-  if (uav.preflight.topics_ok && uav.preflight.position_valid) {
+  if (readings.preflight.topics_ok && readings.preflight.position_valid) {
     // asking again before ControlInfo shows the accepted ON would just make ControlManager complain
     if (!isSet(output_on_time_) || (clock_->now() - output_on_time_).seconds() >= OUTPUT_ON_RETRY_PERIOD_S) {
       if (co_await callControlOutput(true)) {
@@ -553,7 +553,7 @@ mrs_lib::Task<> AutomaticStart::stateWaitingForOutput(const UavSnapshot &uav) {
     }
   } else {
     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "not turning control output ON: topics_ok=%s, position_valid=%s",
-                         uav.preflight.topics_ok ? "true" : "FALSE", uav.preflight.position_valid ? "true" : "FALSE");
+                         readings.preflight.topics_ok ? "true" : "FALSE", readings.preflight.position_valid ? "true" : "FALSE");
   }
 
   const bool accepted_while_waiting = isSet(output_on_time_) && output_on_time_ >= waiting_since;
@@ -582,7 +582,7 @@ mrs_lib::Task<> AutomaticStart::stateWaitingForOutput(const UavSnapshot &uav) {
 /* stateCountdown() //{ */
 
 // the OFFBOARD countdown: takes off (or finishes, when not triggering the takeoff) once it runs out
-mrs_lib::Task<> AutomaticStart::stateCountdown(const UavSnapshot &uav) {
+mrs_lib::Task<> AutomaticStart::stateCountdown(const Readings &readings) {
 
   if (_simulation_ && isGazeboSimulation() && !spawnerReady()) {
     co_return;
@@ -594,7 +594,7 @@ mrs_lib::Task<> AutomaticStart::stateCountdown(const UavSnapshot &uav) {
   }
 
   // restarted after a data gap, so that the pilot always sees the full countdown before the takeoff
-  const double time_in_offboard = (clock_->now() - std::max(uav.offboard_since, data_ok_since_)).seconds();
+  const double time_in_offboard = (clock_->now() - std::max(readings.offboard_since, data_ok_since_)).seconds();
 
   if (time_in_offboard <= _takeoff_countdown_) {
     RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off in %.0f s (switch OFFBOARD off to abort)", (_takeoff_countdown_ - time_in_offboard));
@@ -618,11 +618,11 @@ mrs_lib::Task<> AutomaticStart::stateCountdown(const UavSnapshot &uav) {
 // keeps control output OFF so MRS can't take over (OFFBOARD finds no setpoints); a short MANUAL is an aborted OFFBOARD
 // on the ground and resumes, a long one is a real flight and the pilot must disarm and arm again;
 // true while paused: timerMain() must not go on with the other checks
-mrs_lib::Task<bool> AutomaticStart::stateManualPause(const UavSnapshot &uav) {
+mrs_lib::Task<bool> AutomaticStart::stateManualPause(const Readings &readings) {
 
   const bool manual_too_long = (clock_->now() - manual_since_).seconds() >= _manual_resume_timeout_;
 
-  if (uav.state == State::STATE_MANUAL) {
+  if (readings.state == State::STATE_MANUAL) {
     if (pause_step_ != PAUSE_NEEDS_REARM) {
       changePauseStep(manual_too_long ? PAUSE_NEEDS_REARM : PAUSE_IN_MANUAL);
     }
@@ -632,7 +632,7 @@ mrs_lib::Task<bool> AutomaticStart::stateManualPause(const UavSnapshot &uav) {
         we_turned_output_on_           = false;
         we_turned_output_off_in_pause_ = true;
       }
-    } else if (uav.control_output_enabled && !we_turned_output_off_in_pause_) {
+    } else if (readings.control_output_enabled && !we_turned_output_off_in_pause_) {
       RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "control output is ON during MANUAL, but automatic start did not turn it on");
     }
 
@@ -641,7 +641,7 @@ mrs_lib::Task<bool> AutomaticStart::stateManualPause(const UavSnapshot &uav) {
   }
 
   // timerMain() then switches to the waiting state that matches the inputs
-  if (uav.state == State::STATE_DISARMED) {
+  if (readings.state == State::STATE_DISARMED) {
     RCLCPP_INFO(node_->get_logger(), "disarmed after MANUAL, starting over");
     co_return false;
   }
@@ -651,7 +651,7 @@ mrs_lib::Task<bool> AutomaticStart::stateManualPause(const UavSnapshot &uav) {
     co_return true;
   }
 
-  if (!uav.armed) {
+  if (!readings.armed) {
     // NO_LINK / UNKNOWN: neither a disarm nor a landing -- stay paused; the UAV may still be flying manually, so a
     // long blind pause counts towards the MANUAL duration as well
     changePauseStep(manual_too_long ? PAUSE_NEEDS_REARM : PAUSE_UNCONFIRMED);
@@ -664,7 +664,7 @@ mrs_lib::Task<bool> AutomaticStart::stateManualPause(const UavSnapshot &uav) {
 
   // the preflight heuristics lag behind a UAV that just moved (e.g. PX4's landing descent); resuming now would
   // let the "armed + possibly in the air" check finish automatic start, so wait for them to settle first
-  if (!uav.offboard && isPossiblyInTheAir(uav.preflight)) {
+  if (!readings.offboard && isPossiblyInTheAir(readings.preflight)) {
     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "paused after MANUAL, waiting for the UAV to settle before resuming");
     armed_stable_since_ = time_zero_;
     co_return true;
@@ -688,15 +688,15 @@ mrs_lib::Task<bool> AutomaticStart::stateManualPause(const UavSnapshot &uav) {
 /* stateTakeoff() //{ */
 
 // waits for the takeoff to finish: flying normally, interrupted, or takeoff_timeout
-void AutomaticStart::stateTakeoff(const UavSnapshot &uav) {
+void AutomaticStart::stateTakeoff(const Readings &readings) {
 
-  if (uav.flying_normally) {
+  if (readings.flying_normally) {
     finish("takeoff finished");
     return;
   }
 
-  if (isTakeoffInterrupted(uav.state)) {
-    finish(std::string("takeoff interrupted (") + stateName(uav.state) + ")");
+  if (isTakeoffInterrupted(readings.state)) {
+    finish(std::string("takeoff interrupted (") + stateName(readings.state) + ")");
     return;
   }
 
