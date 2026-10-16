@@ -128,7 +128,7 @@ class PublisherHandlerTest(unittest.TestCase):
             self.assertEqual(starting_over, 3)
 
             # automatic start actually ran and recognized the situation
-            proc_output.assertWaitFor("switching states IDLE -> TAKEOFF", timeout=5)
+            proc_output.assertWaitFor("switching states COUNTDOWN -> TAKEOFF", timeout=5)
 
         finally:
             self.node.destroy_subscription(sub)
