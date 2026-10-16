@@ -1,0 +1,6 @@
+mrs_uav_autostart:
+
+  # moved to mrs_uav_managers (diagnostics_manager/preflight_check), must stop the node
+  preflight_check:
+    height_check:
+      enabled: false
