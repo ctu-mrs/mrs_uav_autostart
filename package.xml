@@ -29,6 +29,8 @@
   <depend>mrs_msgs</depend>
   <depend>mrs_uav_testing</depend>
 
+  <test_depend>ament_cmake_gtest</test_depend>
+
   <!-- Linters -->
   <test_depend>ament_cmake_clang_format</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
