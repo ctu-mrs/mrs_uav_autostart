@@ -124,8 +124,7 @@ class PublisherHandlerTest(unittest.TestCase):
             self.assertTrue(test_result[0].data)
 
             # automatic start gave up waiting for the takeoff
-            proc_output.assertWaitFor("the takeoff did not finish within", timeout=5)
-            proc_output.assertWaitFor("AUTOMATIC START FINISHED", timeout=5)
+            proc_output.assertWaitFor("FINISHED: takeoff did not finish within", timeout=5)
 
         finally:
             self.node.destroy_subscription(sub)

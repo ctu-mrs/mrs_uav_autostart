@@ -17,6 +17,8 @@ endif()
 # set the compile options to show code warnings
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options("-Wall" "-Wextra" "-Wpedantic")
+  # a Task<> function without co_await/co_return is not a coroutine but a function missing its return
+  add_compile_options("-Werror=return-type")
 endif()
 
 if(ENABLE_COVERAGE)

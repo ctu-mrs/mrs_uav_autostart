@@ -226,7 +226,7 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
     if (isMrsFlying(state)) {
       RCLCPP_WARN(node_->get_logger(), "the UAV is already flying, nothing to start");
-      co_await finish("already flying");
+      finish("already flying");
       co_return;
     }
 
@@ -259,28 +259,7 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
   case STATE_TAKEOFF: {
 
-    if (control_info->flying_normally) {
-
-      RCLCPP_INFO(node_->get_logger(), "takeoff finished");
-
-      co_await finish("takeoff finished");
-
-    } else if (isTakeoffInterrupted(state)) {
-
-      RCLCPP_WARN(node_->get_logger(), "the takeoff was interrupted, nothing left to wait for");
-
-      co_await finish(std::string("takeoff interrupted (") + stateName(state) + ")");
-
-    } else if ((clock_->now() - takeoff_time_).seconds() > _takeoff_timeout_) {
-
-      RCLCPP_WARN(node_->get_logger(), "the takeoff did not finish within %.0f s, giving up waiting for it", _takeoff_timeout_);
-
-      co_await finish(std::format("takeoff did not finish within {:.0f} s", _takeoff_timeout_));
-
-    } else {
-
-      RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "waiting for the takeoff to finish");
-    }
+    handleTakeoff(state, control_info);
 
     break;
   }
@@ -352,34 +331,11 @@ bool AutomaticStart::dataReady() {
 
 /* changeState() //{ */
 
-mrs_lib::Task<> AutomaticStart::changeState(AutostartState_t new_state) {
+void AutomaticStart::changeState(AutostartState_t new_state) {
 
   RCLCPP_INFO(node_->get_logger(), "switching states %s -> %s", state_names[current_state_], state_names[new_state]);
 
-  switch (new_state) {
-
-  case STATE_IDLE: {
-
-    break;
-  }
-
-  case STATE_TAKEOFF: {
-
-    bool res = co_await takeoff();
-
-    if (!res) {
-
-      co_await finish("takeoff refused");
-
-      co_return;
-    }
-
-    takeoff_time_ = clock_->now();
-
-    break;
-  }
-
-  case STATE_FINISHED: {
+  if (new_state == STATE_FINISHED) {
 
     RCLCPP_INFO(node_->get_logger(), "----------------------------------------");
     RCLCPP_INFO(node_->get_logger(), "AUTOMATIC START FINISHED: %s", finish_reason_.c_str());
@@ -392,9 +348,6 @@ mrs_lib::Task<> AutomaticStart::changeState(AutostartState_t new_state) {
     sh_control_info_.stop();
     sh_general_robot_info_.stop();
     sh_gazebo_spawner_diag_.stop();
-
-    break;
-  }
   }
 
   current_state_ = new_state;
@@ -404,11 +357,11 @@ mrs_lib::Task<> AutomaticStart::changeState(AutostartState_t new_state) {
 
 /* finish() //{ */
 
-mrs_lib::Task<> AutomaticStart::finish(const std::string reason) {
+void AutomaticStart::finish(const std::string &reason) {
 
   finish_reason_ = reason;
 
-  co_await changeState(STATE_FINISHED);
+  changeState(STATE_FINISHED);
 }
 
 //}
@@ -438,8 +391,6 @@ mrs_lib::Task<bool> AutomaticStart::handleManualPause(const uint8_t state, const
       if (co_await setControlOutput(false)) {
         we_turned_output_on_           = false;
         we_turned_output_off_in_pause_ = true;
-      } else {
-        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output OFF");
       }
     } else if (control_info->output_enabled && !we_turned_output_off_in_pause_) {
       RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "control output is ON during MANUAL, but automatic start did not turn it on");
@@ -523,14 +474,10 @@ mrs_lib::Task<bool> AutomaticStart::handlePossiblyInTheAir(const bool armed, con
 
     if (we_turned_output_on_) {
 
-      bool res = co_await setControlOutput(false);
-
-      if (!res) {
-        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output OFF");
-      }
+      co_await setControlOutput(false);
     }
 
-    co_await finish("possibly in the air while armed");
+    finish("possibly in the air while armed");
   }
 
   co_return true;
@@ -569,10 +516,6 @@ mrs_lib::Task<bool> AutomaticStart::handleControlOutput(const uint8_t state, con
 
     we_turned_output_on_ = co_await setControlOutput(true);
 
-    if (!we_turned_output_on_) {
-      RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON");
-    }
-
   } else {
 
     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "not turning control output ON: topics_ok=%s, position_valid=%s",
@@ -591,7 +534,7 @@ mrs_lib::Task<bool> AutomaticStart::handleControlOutput(const uint8_t state, con
     } else {
       RCLCPP_WARN(node_->get_logger(), "could not set control output ON for %.1f s, disarming", _arm_to_output_timeout_);
       co_await disarm();
-      co_await finish("control output could not be turned ON, disarmed");
+      finish("control output could not be turned ON, disarmed");
       co_return true;
     }
   }
@@ -622,18 +565,51 @@ mrs_lib::Task<> AutomaticStart::handleCountdown(const bool armed, const bool off
   }
 
   if (!_trigger_takeoff_) {
-    co_await finish("takeoff left to someone else (trigger_takeoff = false)");
+    finish("takeoff left to someone else (trigger_takeoff = false)");
     co_return;
   }
 
   // restarted after a data gap, so that the pilot always sees the full countdown before the takeoff
   const double time_in_offboard = (clock_->now() - std::max(offboard_since, data_ok_since_)).seconds();
 
-  if (time_in_offboard > _takeoff_countdown_) {
-    co_await changeState(STATE_TAKEOFF);
-  } else {
+  if (time_in_offboard <= _takeoff_countdown_) {
     RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off in %.0f s (switch OFFBOARD off to abort)", (_takeoff_countdown_ - time_in_offboard));
+    co_return;
   }
+
+  if (!co_await takeoff()) {
+    finish("takeoff refused");
+    co_return;
+  }
+
+  takeoff_time_ = clock_->now();
+
+  changeState(STATE_TAKEOFF);
+}
+
+//}
+
+/* handleTakeoff() //{ */
+
+// waits for the takeoff to finish: flying normally, interrupted, or takeoff_timeout
+void AutomaticStart::handleTakeoff(const uint8_t state, const mrs_msgs::msg::ControlInfo::ConstSharedPtr &control_info) {
+
+  if (control_info->flying_normally) {
+    finish("takeoff finished");
+    return;
+  }
+
+  if (isTakeoffInterrupted(state)) {
+    finish(std::string("takeoff interrupted (") + stateName(state) + ")");
+    return;
+  }
+
+  if ((clock_->now() - takeoff_time_).seconds() > _takeoff_timeout_) {
+    finish(std::format("takeoff did not finish within {:.0f} s", _takeoff_timeout_));
+    return;
+  }
+
+  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "waiting for the takeoff to finish");
 }
 
 //}
