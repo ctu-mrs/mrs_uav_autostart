@@ -374,18 +374,19 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
   bool got_general_robot_info =
       sh_general_robot_info_.hasMsg() && (clock_->now() - sh_general_robot_info_.lastMsgTime()).seconds() <= _diagnostics_manager_timeout_;
 
-  // position_known guards against reading a not-yet-reported position_valid as a confirmed violation
-  bool got_safety_area_manager = got_general_robot_info && sh_general_robot_info_.getMsg()->preflight_status.position_known;
+  // position_valid is only a default until SafetyAreaManager reports (position_known); acting on it would keep
+  // control output OFF and make the arm-to-output timeout disarm the UAV
+  bool got_safety_area_check = got_general_robot_info && sh_general_robot_info_.getMsg()->preflight_status.position_known;
 
   // all four come via DiagnosticsManager, so a missing reading is attributed to it here;
   // DiagnosticsManager's own timerErrorPublishing() attributes SafetyAreaManager specifically
-  if (!got_control_info || !got_uav_state || !got_general_robot_info || !got_safety_area_manager) {
+  if (!got_control_info || !got_uav_state || !got_general_robot_info || !got_safety_area_check) {
     RCLCPP_WARN_THROTTLE(
         node_->get_logger(), *clock_, 5000,
         "waiting for data: DiagnosticsManager (control_info)=%s, DiagnosticsManager (uav_state)=%s, DiagnosticsManager (general_robot_info)=%s, "
         "DiagnosticsManager (safety_area_manager)=%s",
         got_control_info ? "true" : "FALSE", got_uav_state ? "true" : "FALSE", got_general_robot_info ? "true" : "FALSE",
-        got_safety_area_manager ? "true" : "FALSE");
+        got_safety_area_check ? "true" : "FALSE");
     error_publisher_->addWaitingForNodeError({"DiagnosticsManager", "main"});
 
     co_return;
