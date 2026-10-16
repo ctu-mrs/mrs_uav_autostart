@@ -159,10 +159,10 @@ private:
 
   mrs_lib::Task<bool> handlePossiblyInTheAir(const bool armed, const bool offboard, const mrs_msgs::msg::PreflightStatus &preflight);
 
-  mrs_lib::Task<bool> handleControlOutput(const bool armed, const bool control_output_enabled, const rclcpp::Time armed_since,
+  mrs_lib::Task<bool> handleControlOutput(const uint8_t state, const bool control_output_enabled, const rclcpp::Time armed_since,
                                           const mrs_msgs::msg::PreflightStatus &preflight);
 
-  mrs_lib::Task<> handleCountdown(const bool offboard, const bool control_output_enabled, const rclcpp::Time offboard_since);
+  mrs_lib::Task<> handleCountdown(const bool armed, const bool offboard, const bool control_output_enabled, const rclcpp::Time offboard_since);
 
   mrs_lib::Task<bool> takeoff();
 
@@ -188,6 +188,10 @@ private:
 
   AutostartState_t    current_state_ = STATE_IDLE;
   mrs_lib::Task<void> changeState(AutostartState_t new_state);
+
+  // by value: the coroutine may outlive the caller's string
+  mrs_lib::Task<> finish(const std::string reason);
+  std::string     finish_reason_;
 };
 
 //}

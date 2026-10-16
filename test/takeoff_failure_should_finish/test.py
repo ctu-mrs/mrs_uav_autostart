@@ -170,8 +170,8 @@ class PublisherHandlerTest(unittest.TestCase):
             self.assertTrue(test_result[0].data)
 
             # automatic start triggered the takeoff, got it rejected and finished
-            proc_output.assertWaitFor("taking off failed", timeout=5)
-            proc_output.assertWaitFor("[uav1.automatic_start]: finished", timeout=5)
+            proc_output.assertWaitFor("<<< takeoff refused", timeout=5)
+            proc_output.assertWaitFor("AUTOMATIC START FINISHED", timeout=5)
 
         finally:
             self.node.destroy_subscription(sub)

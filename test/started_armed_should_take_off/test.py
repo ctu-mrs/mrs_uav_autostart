@@ -199,7 +199,7 @@ class PublisherHandlerTest(unittest.TestCase):
             self.assertTrue(test_result[0].data)
 
             # automatic start actually ran and took the UAV over
-            proc_output.assertWaitFor("setting control output ON", timeout=5)
+            proc_output.assertWaitFor(">>> turning control output ON", timeout=5)
 
         finally:
             self.node.destroy_subscription(sub)
