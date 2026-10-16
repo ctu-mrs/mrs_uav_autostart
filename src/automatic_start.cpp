@@ -37,30 +37,28 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   resume_time_        = time_zero_;
   takeoff_time_       = time_zero_;
 
+  const auto shutdown_with_error = [this](const std::string &message) {
+    RCLCPP_ERROR(node_->get_logger(), "%s", message.c_str());
+    error_publisher_->addOneshotError(message);
+    error_publisher_->flushAndShutdown();
+  };
+
   mrs_lib::ParamLoader param_loader(node_, "AutomaticStart");
 
   std::string custom_config_path;
 
   param_loader.loadParam("custom_config", custom_config_path);
 
-  if (!custom_config_path.empty()) {
-    if (!param_loader.addYamlFile(custom_config_path)) {
-      RCLCPP_ERROR(node_->get_logger(), "failed to load custom_config");
-      error_publisher_->addOneshotError("failed to load custom_config");
-      error_publisher_->flushAndShutdown();
-    }
+  if (!custom_config_path.empty() && !param_loader.addYamlFile(custom_config_path)) {
+    shutdown_with_error("failed to load custom_config");
   }
 
   if (!param_loader.addYamlFileFromParam("config_private")) {
-    RCLCPP_ERROR(node_->get_logger(), "failed to load config_private");
-    error_publisher_->addOneshotError("failed to load config_private");
-    error_publisher_->flushAndShutdown();
+    shutdown_with_error("failed to load config_private");
   }
 
   if (!param_loader.addYamlFileFromParam("config_public")) {
-    RCLCPP_ERROR(node_->get_logger(), "failed to load config_public");
-    error_publisher_->addOneshotError("failed to load config_public");
-    error_publisher_->flushAndShutdown();
+    shutdown_with_error("failed to load config_public");
   }
 
   param_loader.loadParam("uav_name", _uav_name_);
@@ -80,9 +78,7 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   }
 
   if (!param_loader.loadedSuccessfully()) {
-    RCLCPP_ERROR(node_->get_logger(), "Could not load all parameters!");
-    error_publisher_->addOneshotError("Could not load all parameters!");
-    error_publisher_->flushAndShutdown();
+    shutdown_with_error("Could not load all parameters!");
   }
 
   // | ----------------------- subscribers ---------------------- |
