@@ -68,6 +68,11 @@ target_link_libraries(MrsUavAutostart_AutomaticStart
     ${std_srvs_TARGETS}
 )
 
+target_include_directories(MrsUavAutostart_AutomaticStart
+  PRIVATE
+    include
+)
+
 rclcpp_components_register_nodes(MrsUavAutostart_AutomaticStart
   "mrs_uav_autostart::AutomaticStart"
 )
