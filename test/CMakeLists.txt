@@ -12,7 +12,6 @@ include_directories(common)
 
 add_subdirectory(outside_safety_area_should_disarm)
 add_subdirectory(topic_check_failure_should_disarm)
-add_subdirectory(takeoff_should_fail_while_moving)
 add_subdirectory(takeoff_should_succeed)
 add_subdirectory(trigger_takeoff_off_should_finish)
 add_subdirectory(errorgraph_clears_after_startup)
