@@ -16,6 +16,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 // plays DiagnosticsManager, ControlManager, HW API and UavManager for uav1's automatic start; a test sets the inputs
 // below and checks the counted calls
@@ -35,8 +36,10 @@ public:
   // | -------------------- ControlManager, HW API ------------------- |
 
   std::atomic<bool>   output_enabled{false};
-  std::atomic<double> control_info_lag{0.0}; // [s], ControlInfo shows an accepted ON only this much later
-  std::atomic<bool>   refuse{false};         // toggle_output ON and the disarm are refused
+  std::atomic<double> control_info_lag{0.0};   // [s], ControlInfo shows an accepted ON only this much later
+  std::atomic<bool>   refuse_output_on{false}; // toggle_output refuses an ON
+  std::atomic<double> output_on_delay{0.0};    // [s], toggle_output answers an ON only this much later
+  std::atomic<bool>   refuse_disarm{false};    // hw_api/arming refuses a disarm
 
   std::atomic<int> output_on_calls{0}, output_off_calls{0}, disarm_calls{0}, takeoff_calls{0};
 
@@ -46,25 +49,34 @@ public:
     pub_ci_    = node_->create_publisher<mrs_msgs::msg::ControlInfo>("/uav1/diagnostics_manager/control_info", 10);
     pub_gri_   = node_->create_publisher<mrs_msgs::msg::GeneralRobotInfo>("/uav1/diagnostics_manager/general_robot_info", 10);
 
+    // answered right away, or after output_on_delay without blocking the mock (a deferred response)
     srv_output_ = node_->create_service<std_srvs::srv::SetBool>(
         "/uav1/control_manager/toggle_output",
-        [this, alive = alive_](const std_srvs::srv::SetBool::Request::SharedPtr req, std_srvs::srv::SetBool::Response::SharedPtr res) {
+        [this, alive = alive_](const std::shared_ptr<rclcpp::Service<std_srvs::srv::SetBool>> service, const std::shared_ptr<rmw_request_id_t> header,
+                               const std_srvs::srv::SetBool::Request::SharedPtr req) {
           std::scoped_lock alive_lock(alive->mutex);
           if (!alive->alive) {
             return;
           }
           (req->data ? output_on_calls : output_off_calls)++;
-          if (req->data && refuse) {
-            res->success = false;
-            res->message = "refused by the test";
+          std_srvs::srv::SetBool::Response res;
+          if (req->data && refuse_output_on) {
+            res.success = false;
+            res.message = "refused by the test";
+          } else {
+            if (req->data && !output_enabled) {
+              std::scoped_lock lock(mutex_output_on_time_);
+              output_on_time_ = node_->get_clock()->now();
+            }
+            output_enabled = req->data;
+            res.success    = true;
+          }
+          if (req->data && output_on_delay > 0.0) {
+            std::scoped_lock lock(mutex_deferred_);
+            deferred_.push_back({header, res, node_->get_clock()->now() + rclcpp::Duration::from_seconds(output_on_delay)});
             return;
           }
-          if (req->data && !output_enabled) {
-            std::scoped_lock lock(mutex_output_on_time_);
-            output_on_time_ = node_->get_clock()->now();
-          }
-          output_enabled = req->data;
-          res->success   = true;
+          service->send_response(*header, res);
         });
 
     srv_arm_ = node_->create_service<std_srvs::srv::SetBool>(
@@ -76,8 +88,8 @@ public:
           if (!req->data) {
             disarm_calls++;
           }
-          res->success = !refuse;
-          res->message = refuse ? "refused by the test" : "";
+          res->success = req->data || !refuse_disarm;
+          res->message = res->success ? "" : "refused by the test";
         });
 
     srv_takeoff_ = node_->create_service<std_srvs::srv::Trigger>(
@@ -124,10 +136,15 @@ public:
     });
   }
 
-  // waits until automatic start has all the data, including a confirmed UAV state; arming only after this keeps the
-  // started-armed guard off however long automatic start took to come up
+  // waits until automatic start has all the data, including a confirmed UAV state, and a moment more: arming only after
+  // this keeps the started-armed guard off however long automatic start took to come up, and automatic start does not
+  // trust an arming that comes together with its data
   bool waitForAutomaticStart(const double timeout = 30.0) {
-    return waitFor([this] { return automatic_start_ready_.load(); }, timeout);
+    if (!waitFor([this] { return automatic_start_ready_.load(); }, timeout)) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    return true;
   }
 
   // what ControlInfo shows, see control_info_lag
@@ -170,6 +187,16 @@ private:
 
   std::atomic<bool> automatic_start_ready_{false};
 
+  // toggle_output answers waiting for output_on_delay, sent from publish()
+  struct Deferred
+  {
+    std::shared_ptr<rmw_request_id_t> header;
+    std_srvs::srv::SetBool::Response  response;
+    rclcpp::Time                      due;
+  };
+  std::mutex            mutex_deferred_;
+  std::vector<Deferred> deferred_;
+
   // declared last, so they are destroyed before the inputs they read
   rclcpp::Publisher<mrs_msgs::msg::State>::SharedPtr            pub_state_;
   rclcpp::Publisher<mrs_msgs::msg::ControlInfo>::SharedPtr      pub_ci_;
@@ -181,6 +208,18 @@ private:
   rclcpp::TimerBase::SharedPtr                                  timer_;
 
   void publish() {
+    {
+      std::scoped_lock lock(mutex_deferred_);
+      for (auto it = deferred_.begin(); it != deferred_.end();) {
+        if (node_->get_clock()->now() >= it->due) {
+          srv_output_->send_response(*it->header, it->response);
+          it = deferred_.erase(it);
+        } else {
+          ++it;
+        }
+      }
+    }
+
     mrs_msgs::msg::State s;
     s.stamp = node_->get_clock()->now();
     s.state = state;

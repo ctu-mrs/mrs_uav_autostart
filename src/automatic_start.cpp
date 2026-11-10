@@ -48,6 +48,8 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
 
   offboard_since_ = time_zero_;
 
+  arming_seen_time_ = time_zero_;
+
   output_on_time_ = time_zero_;
 
   manual_since_       = time_zero_;
@@ -177,6 +179,14 @@ void AutomaticStart::callbackUavState(const mrs_msgs::msg::State::ConstSharedPtr
     offboard_since_ = clock_->now();
   }
 
+  // a manual flight reads as ARMED when the HW API doesn't report airborne, so only an arming we saw ourselves, right
+  // after it happened, means the UAV is on the ground
+  if (is_armed && state != State::STATE_MANUAL && uav_state_ == State::STATE_DISARMED) {
+    arming_seen_time_ = clock_->now();
+  } else if (!is_armed || state == State::STATE_MANUAL) {
+    arming_seen_time_ = time_zero_;
+  }
+
   uav_state_ = state;
 
   // latch + update the confirmed-state trackers, skipping ambiguous UNKNOWN/NO_LINK readings
@@ -250,8 +260,8 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
 
   checkManual(readings);
 
-  if (current_state_ == STATE_MANUAL_PAUSE) {
-    if (co_await stateManualPause(readings)) {
+  if (current_state_ == STATE_PAUSE) {
+    if (co_await statePause(readings)) {
       co_return;
     }
   }
@@ -349,6 +359,19 @@ void AutomaticStart::changeState(AutostartState_t new_state) {
 
 //}
 
+/* startPause() //{ */
+
+void AutomaticStart::startPause(const PauseStep_t step, const bool after_output_failure) {
+
+  changeState(STATE_PAUSE);
+  pause_step_                    = step;
+  manual_since_                  = clock_->now();
+  we_turned_output_off_in_pause_ = false;
+  paused_after_output_failure_   = after_output_failure;
+}
+
+//}
+
 /* changePauseStep() //{ */
 
 void AutomaticStart::changePauseStep(PauseStep_t new_step) {
@@ -357,7 +380,7 @@ void AutomaticStart::changePauseStep(PauseStep_t new_step) {
     return;
   }
 
-  RCLCPP_INFO(node_->get_logger(), "MANUAL_PAUSE: %s -> %s", pause_step_names[pause_step_], pause_step_names[new_step]);
+  RCLCPP_INFO(node_->get_logger(), "PAUSE: %s -> %s", pause_step_names[pause_step_], pause_step_names[new_step]);
 
   pause_step_ = new_step;
 }
@@ -366,7 +389,7 @@ void AutomaticStart::changePauseStep(PauseStep_t new_step) {
 
 /* waitingState() //{ */
 
-// the waiting state that matches the current inputs; MANUAL_PAUSE is handled before, see stateManualPause()
+// the waiting state that matches the current inputs; PAUSE is handled before, see statePause()
 AutostartState_t AutomaticStart::waitingState(const Readings &readings) {
 
   if (!readings.armed) {
@@ -473,18 +496,15 @@ bool AutomaticStart::checkAlreadyFlying(const Readings &readings) {
 
 /* checkManual() //{ */
 
-// MANUAL, a pilot or the autopilot flies the UAV without offboard: enters MANUAL_PAUSE, see stateManualPause()
+// MANUAL, a pilot or the autopilot flies the UAV without offboard: enters PAUSE, see statePause()
 void AutomaticStart::checkManual(const Readings &readings) {
 
-  if (readings.state != State::STATE_MANUAL || current_state_ == STATE_MANUAL_PAUSE) {
+  if (readings.state != State::STATE_MANUAL || current_state_ == STATE_PAUSE) {
     return;
   }
 
   RCLCPP_WARN(node_->get_logger(), "the UAV is flying without offboard (MANUAL), pausing");
-  changeState(STATE_MANUAL_PAUSE);
-  pause_step_                    = PAUSE_IN_MANUAL;
-  manual_since_                  = clock_->now();
-  we_turned_output_off_in_pause_ = false;
+  startPause(PAUSE_IN_MANUAL, false);
 }
 
 //}
@@ -534,7 +554,8 @@ void AutomaticStart::stateWaitingForArm(const Readings &readings) {
 
 /* stateWaitingForOutput() //{ */
 
-// turns control output ON; the arm-to-output timeout disarms and finishes
+// turns control output ON; the arm-to-output timeout disarms and finishes right after an arming we saw, otherwise the
+// pilot must disarm and arm again
 mrs_lib::Task<> AutomaticStart::stateWaitingForOutput(const Readings &readings) {
 
   // counted from entering WAITING_FOR_OUTPUT (arming, a resume, the output dropping) or from the data coming back,
@@ -564,10 +585,25 @@ mrs_lib::Task<> AutomaticStart::stateWaitingForOutput(const Readings &readings) 
     co_return;
   }
 
-  if (started_armed_) {
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
-                         "could not set control output ON for %.1f s, but the UAV was already armed when automatic start came up, not disarming",
-                         _arm_to_output_timeout_);
+  // after an output dropout, a link gap, a resume or a data gap the UAV may be flying manually (ARMED when the HW API
+  // doesn't report airborne), so we disarm only a UAV we just saw being armed on the ground, otherwise the pilot must
+  // disarm and arm again (the autopilot's pre-takeoff auto-disarm covers a UAV left on the ground)
+  const rclcpp::Time arming = mrs_lib::get_mutexed(mutex_uav_state_, arming_seen_time_);
+  const double       margin = std::max(0.2, 3.0 / _main_timer_rate_); // [s], the timer sees the arming up to a few ticks late
+
+  // seen while the data was already there, not a reading that came back with it
+  const bool armed_with_data = isSet(arming) && (arming - data_ok_since_).seconds() >= margin;
+  // this timeout started at the arming, not at a later dropout, resume or data gap
+  const bool timeout_from_arming = isSet(arming) && arming <= waiting_since && (waiting_since - arming).seconds() <= margin;
+  // not late, e.g. after a long toggle_output call during which the pilot could take off
+  const bool not_late = isSet(arming) && (clock_->now() - arming).seconds() <= _arm_to_output_timeout_ + arming_late_limit_;
+
+  const bool disarm_allowed = armed_with_data && timeout_from_arming && not_late;
+
+  if (!disarm_allowed) {
+    RCLCPP_WARN(node_->get_logger(), "could not set control output ON for %.1f s, but %s, not disarming", _arm_to_output_timeout_,
+                started_armed_ ? "the UAV was already armed when automatic start came up" : "the UAV was not armed just now");
+    startPause(PAUSE_NEEDS_REARM, true);
     co_return;
   }
 
@@ -615,12 +651,13 @@ mrs_lib::Task<> AutomaticStart::stateCountdown(const Readings &readings) {
 
 //}
 
-/* stateManualPause() //{ */
+/* statePause() //{ */
 
 // keeps control output OFF so MRS can't take over (OFFBOARD finds no setpoints); a short MANUAL is an aborted OFFBOARD
-// on the ground and resumes, a long one is a real flight and the pilot must disarm and arm again;
+// on the ground and resumes, a long one is a real flight and the pilot must disarm and arm again, as after control
+// output could not be turned ON without a disarm (stateWaitingForOutput());
 // true while paused: timerMain() must not go on with the other checks
-mrs_lib::Task<bool> AutomaticStart::stateManualPause(const Readings &readings) {
+mrs_lib::Task<bool> AutomaticStart::statePause(const Readings &readings) {
 
   const bool manual_too_long = (clock_->now() - manual_since_).seconds() >= _manual_resume_timeout_;
 
@@ -644,12 +681,21 @@ mrs_lib::Task<bool> AutomaticStart::stateManualPause(const Readings &readings) {
 
   // timerMain() then switches to the waiting state that matches the inputs
   if (readings.state == State::STATE_DISARMED) {
-    RCLCPP_INFO(node_->get_logger(), "disarmed after MANUAL, starting over");
+    RCLCPP_INFO(node_->get_logger(), "%s, starting over", paused_after_output_failure_ ? "disarmed" : "disarmed after MANUAL");
     co_return false;
   }
 
   if (pause_step_ == PAUSE_NEEDS_REARM) {
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 5000, "the UAV has flown without offboard, disarm and arm again to use automatic start");
+    // as during MANUAL: an output we turned ON would let the pilot switch OFFBOARD with automatic start given up
+    if (we_turned_output_on_ && readings.control_output_enabled) {
+      if (co_await callControlOutput(false)) {
+        we_turned_output_on_           = false;
+        we_turned_output_off_in_pause_ = true;
+      }
+    }
+
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 5000, "%s, disarm and arm again to use automatic start",
+                         paused_after_output_failure_ ? "control output could not be turned ON" : "the UAV has flown without offboard");
     co_return true;
   }
 
