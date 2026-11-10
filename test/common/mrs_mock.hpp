@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -46,7 +47,12 @@ public:
     pub_gri_   = node_->create_publisher<mrs_msgs::msg::GeneralRobotInfo>("/uav1/diagnostics_manager/general_robot_info", 10);
 
     srv_output_ = node_->create_service<std_srvs::srv::SetBool>(
-        "/uav1/control_manager/toggle_output", [this](const std_srvs::srv::SetBool::Request::SharedPtr req, std_srvs::srv::SetBool::Response::SharedPtr res) {
+        "/uav1/control_manager/toggle_output",
+        [this, alive = alive_](const std_srvs::srv::SetBool::Request::SharedPtr req, std_srvs::srv::SetBool::Response::SharedPtr res) {
+          std::scoped_lock alive_lock(alive->mutex);
+          if (!alive->alive) {
+            return;
+          }
           (req->data ? output_on_calls : output_off_calls)++;
           if (req->data && refuse) {
             res->success = false;
@@ -62,7 +68,11 @@ public:
         });
 
     srv_arm_ = node_->create_service<std_srvs::srv::SetBool>(
-        "/uav1/hw_api/arming", [this](const std_srvs::srv::SetBool::Request::SharedPtr req, std_srvs::srv::SetBool::Response::SharedPtr res) {
+        "/uav1/hw_api/arming", [this, alive = alive_](const std_srvs::srv::SetBool::Request::SharedPtr req, std_srvs::srv::SetBool::Response::SharedPtr res) {
+          std::scoped_lock alive_lock(alive->mutex);
+          if (!alive->alive) {
+            return;
+          }
           if (!req->data) {
             disarm_calls++;
           }
@@ -71,16 +81,47 @@ public:
         });
 
     srv_takeoff_ = node_->create_service<std_srvs::srv::Trigger>(
-        "/uav1/uav_manager/takeoff", [this](const std_srvs::srv::Trigger::Request::SharedPtr, std_srvs::srv::Trigger::Response::SharedPtr res) {
+        "/uav1/uav_manager/takeoff", [this, alive = alive_](const std_srvs::srv::Trigger::Request::SharedPtr, std_srvs::srv::Trigger::Response::SharedPtr res) {
+          std::scoped_lock alive_lock(alive->mutex);
+          if (!alive->alive) {
+            return;
+          }
           takeoff_calls++;
           res->success = true;
         });
 
     // published on every tick once automatic start has all of DiagnosticsManager's data
-    sub_ready_ = node_->create_subscription<std_msgs::msg::Bool>("/uav1/automatic_start/ready_to_enable_control_output", 10,
-                                                                 [this](const std_msgs::msg::Bool::ConstSharedPtr) { automatic_start_ready_ = true; });
+    sub_ready_ = subscribe<std_msgs::msg::Bool>("/uav1/automatic_start/ready_to_enable_control_output",
+                                                [this](const std_msgs::msg::Bool::ConstSharedPtr) { automatic_start_ready_ = true; });
 
-    timer_ = node_->create_wall_timer(std::chrono::milliseconds(50), [this] { publish(); });
+    timer_ = node_->create_wall_timer(std::chrono::milliseconds(50), [this, alive = alive_] {
+      std::scoped_lock alive_lock(alive->mutex);
+      if (alive->alive) {
+        publish();
+      }
+    });
+  }
+
+  // TestGeneric's executor keeps spinning after the test returns: a callback that is running finishes first, later ones
+  // do nothing
+  ~MrsMock() {
+    std::scoped_lock alive_lock(alive_->mutex);
+    alive_->alive = false;
+  }
+
+  MrsMock(const MrsMock &)            = delete;
+  MrsMock &operator=(const MrsMock &) = delete;
+
+  // a subscription whose callback stops with this mock, for a test that listens to automatic start; the variables the
+  // callback uses must be declared before the mock, so they outlive it
+  template <typename Msg>
+  typename rclcpp::Subscription<Msg>::SharedPtr subscribe(const std::string &topic, std::function<void(const typename Msg::ConstSharedPtr)> callback) {
+    return node_->create_subscription<Msg>(topic, 100, [alive = alive_, callback](const typename Msg::ConstSharedPtr msg) {
+      std::scoped_lock alive_lock(alive->mutex);
+      if (alive->alive) {
+        callback(msg);
+      }
+    });
   }
 
   // waits until automatic start has all the data, including a confirmed UAV state; arming only after this keeps the
@@ -114,6 +155,14 @@ public:
   }
 
 private:
+  // shared with the callbacks, which may outlive the mock
+  struct Alive
+  {
+    std::mutex mutex;
+    bool       alive = true;
+  };
+
+  std::shared_ptr<Alive>  alive_ = std::make_shared<Alive>();
   rclcpp::Node::SharedPtr node_;
 
   std::mutex   mutex_output_on_time_;
