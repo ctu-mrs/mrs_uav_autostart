@@ -168,6 +168,9 @@ class AutostartTest(unittest.TestCase):
             # check if the result is true
             self.assertTrue(test_result[0].data)
 
+            # automatic start left the takeoff to the test instead of taking off itself
+            proc_output.assertWaitFor("AUTOMATIC START FINISHED: takeoff left to someone else (trigger_takeoff = false)", timeout=5)
+
         finally:
             self.node.destroy_subscription(sub)
 
