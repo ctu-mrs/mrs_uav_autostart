@@ -1,66 +1,42 @@
 #include <rclcpp/rclcpp.hpp>
-#include <rclcpp/time.hpp>
+
+#include <mrs_msgs/msg/state.hpp>
 
 #include <mrs_uav_testing/test_generic.h>
 
-using namespace std::chrono_literals;
+#include <mrs_mock.hpp>
 
 class Tester : public mrs_uav_testing::TestGeneric {
 
 public:
-  Tester() : mrs_uav_testing::TestGeneric() {
-  }
-
   bool test(void);
-
-  std::shared_ptr<mrs_uav_testing::UAVHandler> uh_;
 };
 
 bool Tester::test(void) {
 
-  const std::string uav_name = "uav1";
+  MrsMock mrs(node_);
+  mrs.position_valid = false; // SafetyAreaManager reports the UAV outside the safety area
 
-  {
-    auto [uhopt, message] = getUAVHandler(uav_name);
+  sleep(3.0); // DISARMED first, so the started-armed guard stays off
 
-    if (!uhopt) {
-      RCLCPP_ERROR(node_->get_logger(), "obtain handler for '%s': '%s'", uav_name.c_str(), message.c_str());
-      return false;
-    }
+  mrs.state = mrs_msgs::msg::State::STATE_ARMED;
 
-    uh_ = uhopt.value();
+  if (mrs.waitFor([&] { return mrs.output_on_calls > 0 || mrs.disarm_calls > 0; }, 1.0)) {
+    return mrs.fail("automatic_start turned output ON or disarmed before arm_to_output_timeout (1.5 s)");
   }
 
-  {
-    auto [success, message] = uh_->takeoff();
-
-    if (success) {
-      RCLCPP_ERROR(node_->get_logger(), "takeoff succeeded, but it should fail, message: '%s'", message.c_str());
-      return false;
-    }
+  if (!mrs.waitFor([&] { return mrs.disarm_calls > 0; }, 3.0)) {
+    return mrs.fail("automatic_start did not disarm after arm_to_output_timeout");
   }
 
-  // automatic start never enabled the output, so after arm_to_output_timeout it must disarm the UAV it saw being armed
-  const rclcpp::Time disarm_wait_start = clock_->now();
-
-  while (uh_->isArmed()) {
-
-    if (!rclcpp::ok() || (clock_->now() - disarm_wait_start).seconds() > 5.0) {
-      RCLCPP_ERROR(node_->get_logger(), "automatic start did not disarm the UAV after the output timeout");
-      return false;
-    }
-
-    sleep(0.1);
-  }
-
-  return true;
+  return mrs.output_on_calls == 0 && mrs.output_off_calls == 0 && mrs.takeoff_calls == 0 ? true : mrs.fail("unexpected output ON / OFF or takeoff");
 }
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
   Tester     tester;
   const bool result = tester.test();
-  tester.sleep(2.0);
+  tester.sleep(1.0);
   tester.reportTestResult(result);
   tester.join();
 }
