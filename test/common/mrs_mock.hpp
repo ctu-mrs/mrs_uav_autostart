@@ -5,6 +5,7 @@
 #include <mrs_msgs/msg/control_info.hpp>
 #include <mrs_msgs/msg/general_robot_info.hpp>
 #include <mrs_msgs/msg/state.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <std_srvs/srv/set_bool.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
@@ -75,7 +76,17 @@ public:
           res->success = true;
         });
 
+    // published on every tick once automatic start has all of DiagnosticsManager's data
+    sub_ready_ = node_->create_subscription<std_msgs::msg::Bool>("/uav1/automatic_start/ready_to_enable_control_output", 10,
+                                                                 [this](const std_msgs::msg::Bool::ConstSharedPtr) { automatic_start_ready_ = true; });
+
     timer_ = node_->create_wall_timer(std::chrono::milliseconds(50), [this] { publish(); });
+  }
+
+  // waits until automatic start has all the data, including a confirmed UAV state; arming only after this keeps the
+  // started-armed guard off however long automatic start took to come up
+  bool waitForAutomaticStart(const double timeout = 30.0) {
+    return waitFor([this] { return automatic_start_ready_.load(); }, timeout);
   }
 
   // what ControlInfo shows, see control_info_lag
@@ -108,6 +119,8 @@ private:
   std::mutex   mutex_output_on_time_;
   rclcpp::Time output_on_time_;
 
+  std::atomic<bool> automatic_start_ready_{false};
+
   // declared last, so they are destroyed before the inputs they read
   rclcpp::Publisher<mrs_msgs::msg::State>::SharedPtr            pub_state_;
   rclcpp::Publisher<mrs_msgs::msg::ControlInfo>::SharedPtr      pub_ci_;
@@ -115,6 +128,7 @@ private:
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr            srv_output_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr            srv_arm_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr            srv_takeoff_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr          sub_ready_;
   rclcpp::TimerBase::SharedPtr                                  timer_;
 
   void publish() {

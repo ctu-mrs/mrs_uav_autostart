@@ -212,9 +212,11 @@ Notes:
 
 ### Transitions and the tests that cover them
 
-The simulation tests are in `test/<name>/`. How every `uav_state` is classified
-(`include/mrs_uav_autostart/state_checks.hpp`: confirmed, armed, flown by MRS, takeoff interrupted)
-and the "possibly in the air" preflight check are unit-tested in `test/state_checks`.
+The tests are in `test/<name>/`. Most run automatic start alone against a mock of the MRS nodes it
+talks to (`test/common/mrs_mock.hpp`); the rest run the full MRS UAV System in the simulator. How
+every `uav_state` is classified (`include/mrs_uav_autostart/state_checks.hpp`: confirmed, armed,
+flown by MRS, takeoff interrupted) and the "possibly in the air" preflight check are unit-tested in
+`test/state_checks`.
 
 | Transition                                                                                                                                   | Test (`test/`)                                                                                          |
 |----------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
@@ -228,7 +230,8 @@ and the "possibly in the air" preflight check are unit-tested in `test/state_che
 | `WAITING_FOR_OUTPUT` stays: `topics_ok` false                                                                                                | `topic_check_failure_should_disarm` (output never ON, disarmed after the timeout)                       |
 | `WAITING_FOR_OUTPUT` stays: position outside the safety area                                                                                 | `outside_safety_area_should_disarm` (output never ON, disarmed after the timeout)                       |
 | `WAITING_FOR_ARM` stays: possibly in the air while not armed, only warns                                                                     | `possibly_in_the_air_unarmed_should_wait` (then a normal arming turns output ON)                        |
-| `WAITING_FOR_OUTPUT`/`OFFBOARD` → `FINISHED`: possibly in the air + armed                                                                    | `possibly_in_the_air_unarmed_should_wait` (output ON, turned OFF)                                       |
+| `WAITING_FOR_OFFBOARD` → `FINISHED`: possibly in the air + armed                                                                             | `possibly_in_the_air_unarmed_should_wait` (output ON, turned OFF)                                       |
+| `WAITING_FOR_OUTPUT` → `FINISHED`: armed while possibly in the air                                                                           | `armed_while_moving_should_finish` (output never ON or OFF, no takeoff after OFFBOARD)                  |
 | Armed by the pilot before automatic start came up: output ON, takeoff                                                                        | `started_armed_should_take_off`                                                                         |
 | Armed by the pilot before automatic start came up: automatic start does not disarm on the arm-to-output timeout                              | `started_armed_should_not_disarm`                                                                       |
 | `WAITING_FOR_OFFBOARD` → `COUNTDOWN` → `TAKEOFF` → `FINISHED` (flying normally)                                                              | `takeoff_should_succeed`                                                                                |
