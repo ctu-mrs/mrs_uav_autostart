@@ -167,20 +167,10 @@ bool Tester::test(void) {
 }
 
 int main(int argc, char *argv[]) {
-
   rclcpp::init(argc, argv);
-
-  bool test_result = true;
-
-  Tester tester;
-
-  test_result &= tester.test();
-
+  Tester     tester;
+  const bool result = tester.test();
   tester.sleep(2.0);
-
-  std::cout << "Test: reporting test results" << std::endl;
-
-  tester.reportTestResult(test_result);
-
+  tester.reportTestResult(result);
   tester.join();
 }
