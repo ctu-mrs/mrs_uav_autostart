@@ -1,0 +1,4 @@
+mrs_uav_autostart:
+
+  # short, so the test doesn't wait the default 60 s
+  takeoff_timeout: 3.0 # [s]
