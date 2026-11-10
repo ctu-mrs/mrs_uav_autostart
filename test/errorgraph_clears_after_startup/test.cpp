@@ -17,15 +17,16 @@ public:
 
 bool Tester::test(void) {
 
-  MrsMock mrs(node_);
-  mrs.publish_general_robot_info = false; // held back until the waiting error was seen
-
+  // declared before the mock, so they outlive the subscription's callback
   std::atomic<bool> released{false};
   std::atomic<bool> saw_waiting_error{false};
   std::atomic<int>  clean_after_release{0};
 
+  MrsMock mrs(node_);
+  mrs.publish_general_robot_info = false; // held back until the waiting error was seen
+
   // the shared errors topic carries every node's errors, only automatic start's are checked
-  auto sub = node_->create_subscription<mrs_msgs::msg::ErrorgraphElement>("/uav1/errors", 100, [&](const mrs_msgs::msg::ErrorgraphElement::ConstSharedPtr msg) {
+  auto sub = mrs.subscribe<mrs_msgs::msg::ErrorgraphElement>("/uav1/errors", [&](const mrs_msgs::msg::ErrorgraphElement::ConstSharedPtr msg) {
     if (msg->source_node.node != "AutomaticStart" || msg->source_node.component != "main") {
       return;
     }
