@@ -18,7 +18,10 @@ bool Tester::test(void) {
   // ControlInfo shows the accepted ON only this much later, like DiagnosticsManager relaying ControlManager
   mrs.control_info_lag = 0.6; // [s], shorter than output_on_confirm_timeout (1 s)
 
-  sleep(3.0); // DISARMED first, so the started-armed guard stays off
+  // DISARMED first, so the started-armed guard stays off
+  if (!mrs.waitForAutomaticStart()) {
+    return mrs.fail("automatic_start never got DiagnosticsManager's data -- mock setup broken");
+  }
 
   mrs.state = mrs_msgs::msg::State::STATE_ARMED;
   if (!mrs.waitFor([&] { return mrs.controlInfoOutputEnabled(); }, 10.0)) {

@@ -17,7 +17,10 @@ bool Tester::test(void) {
   MrsMock mrs(node_);
   // flying_normally stays false: the takeoff never finishes
 
-  sleep(3.0); // DISARMED first, so the started-armed guard stays off
+  // DISARMED first, so the started-armed guard stays off
+  if (!mrs.waitForAutomaticStart()) {
+    return mrs.fail("automatic_start never got DiagnosticsManager's data -- mock setup broken");
+  }
 
   mrs.state = mrs_msgs::msg::State::STATE_ARMED;
   if (!mrs.waitFor([&] { return mrs.output_enabled.load(); }, 10.0)) {

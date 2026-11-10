@@ -17,7 +17,10 @@ bool Tester::test(void) {
   MrsMock mrs(node_);
   mrs.topics_ok = false; // output is never turned ON, the arm-to-output timeout runs
 
-  sleep(3.0); // DISARMED first, so the started-armed guard stays off
+  // DISARMED first, so the started-armed guard stays off
+  if (!mrs.waitForAutomaticStart()) {
+    return mrs.fail("automatic_start never got DiagnosticsManager's data -- mock setup broken");
+  }
 
   mrs.state = mrs_msgs::msg::State::STATE_ARMED; // WAITING_FOR_OUTPUT, arm_to_output_timeout (4 s) starts
   sleep(1.0);
