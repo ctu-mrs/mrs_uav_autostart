@@ -46,6 +46,7 @@ add_subdirectory(slow_output_on_should_not_disarm)
 add_subdirectory(early_dropout_should_not_disarm)
 add_subdirectory(refused_disarm_should_finish)
 add_subdirectory(rearm_should_survive_manual)
+add_subdirectory(disarm_disabled_should_not_disarm)
 
 # automatic start alone, no test node
 add_subdirectory(obsolete_preflight_check_should_refuse_to_start)

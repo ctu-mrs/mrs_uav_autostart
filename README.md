@@ -44,8 +44,8 @@ was moved onto DiagnosticsManager):
 - **Errorgraph**: missing data is reported as waiting for DiagnosticsManager. The first ROS2 port
   reported each manager separately; the ROS1 version had no errorgraph.
 - **Parameters**: new `manual_resume_timeout` (5 s), `takeoff_timeout` (60 s),
-  `diagnostics_manager_timeout` (3 s), `output_on_confirm_timeout` (1 s) and `manual_resume_delay`
-  (1 s); `preflight_check/*` removed (see above). Since the first ROS2
+  `diagnostics_manager_timeout` (3 s), `output_on_confirm_timeout` (1 s), `manual_resume_delay`
+  (1 s) and `disarm_on_output_timeout` (true); `preflight_check/*` removed (see above). Since the first ROS2
   port: `safety_timeout` is `takeoff_countdown`, `handle_takeoff` is `trigger_takeoff`,
   `control_output_timeout` is `arm_to_output_timeout`, `pre_takeoff_sleep` and `body_frame_name` are
   gone. Any of the first four (or `preflight_check`) in a custom config stops the node.
@@ -175,7 +175,8 @@ Notes:
    left on the ground is covered by the autopilot's pre-takeoff auto-disarm (PX4:
    `COM_DISARM_PRFLT`); other autopilots may need their own. An accepted ON is not repeated for
    `output_on_confirm_timeout` (1 s), as ControlInfo shows it only a moment later; a refused repeat
-   lets the timeout fire again.
+   lets the timeout fire again. With `disarm_on_output_timeout` false, automatic start never
+   disarms: it always requires the rearm.
 4. **`MANUAL`**: the pilot (or the autopilot itself) is flying without offboard. Automatic start
    keeps control output OFF for the whole pause, so MRS can't take over when the pilot switches
    OFFBOARD on again (it would find no setpoints). `uav_state == MANUAL` requires the UAV to be
@@ -274,3 +275,4 @@ flown by MRS, takeoff interrupted) and the "possibly in the air" preflight check
 | `WAITING_FOR_OFFBOARD` → `WAITING_FOR_OUTPUT` → `PAUSE` (`NEEDS_REARM`): the output drops OFF 0.5 s after the arming, ON refused             | `early_dropout_should_not_disarm` (no disarm)                                                           |
 | `WAITING_FOR_OUTPUT` → `FINISHED`: arm-to-output timeout right after an arming, the disarm refused by the HW API                             | `refused_disarm_should_finish` ("disarming failed")                                                     |
 | `NEEDS_REARM` → `NEEDS_REARM`: a short `MANUAL` doesn't resume after control output could not be turned ON                                   | `rearm_should_survive_manual` (no output ON request)                                                    |
+| `WAITING_FOR_OUTPUT` → `PAUSE` (`NEEDS_REARM`): `disarm_on_output_timeout` false, right after an arming                                      | `disarm_disabled_should_not_disarm` (no disarm)                                                         |

@@ -14,3 +14,9 @@ mrs_uav_autostart:
   # false: perform all checks and enable control output, but leave calling
   #        uav_manager/takeoff to someone else
   trigger_takeoff: true
+
+  # true: when control output can't be turned ON within arm_to_output_timeout right after the pilot armed, disarm
+  #       the UAV and finish
+  # false: never disarm, the pilot must disarm and arm again (the autopilot's pre-takeoff auto-disarm covers a UAV
+  #        left on the ground)
+  disarm_on_output_timeout: true
