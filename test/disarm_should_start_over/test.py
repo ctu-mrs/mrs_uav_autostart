@@ -1,16 +1,15 @@
 import time
 import unittest
 import os
-import sys
 
 import launch
 import launch_ros
 import launch_testing.actions
 import launch_testing.asserts
-from launch.actions import IncludeLaunchDescription, GroupAction, SetEnvironmentVariable
+from launch.actions import IncludeLaunchDescription, GroupAction
 import rclpy
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution, TextSubstitution
+from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
 
@@ -123,9 +122,9 @@ def generate_test_description():
 
     return ld
 
-# #{ class PublisherHandlerTest(unittest.TestCase)
+# #{ class AutostartTest(unittest.TestCase)
 
-class PublisherHandlerTest(unittest.TestCase):
+class AutostartTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -143,7 +142,7 @@ class PublisherHandlerTest(unittest.TestCase):
 
     def test_interactor(self, proc_output, timeout=120):
 
-        """Check whether pose messages published"""
+        """Wait for the test node's result"""
 
         test_result = []
 
@@ -176,8 +175,9 @@ class PublisherHandlerTest(unittest.TestCase):
 
 # #{ Post-shutdown tests
 
+# disabled: the containers can crash on shutdown, see https://github.com/ros2/rclcpp/issues/3312
 # @launch_testing.post_shutdown_test()
-# class PublisherHandlerTestShutdown(unittest.TestCase):
+# class AutostartTestShutdown(unittest.TestCase):
 #     def test_exit_codes(self, proc_info):
 #         """Check if the processes exited normally."""
 #         launch_testing.asserts.assertExitCodes(proc_info)

@@ -35,7 +35,7 @@ bool Tester::test(void) {
     auto [success, message] = uh_->takeoff();
 
     if (success) {
-      RCLCPP_ERROR(node_->get_logger(), "takeoff suceeded, but it should fail, message: '%s'", message.c_str());
+      RCLCPP_ERROR(node_->get_logger(), "takeoff succeeded, but it should fail, message: '%s'", message.c_str());
       return false;
     }
   }
@@ -57,20 +57,10 @@ bool Tester::test(void) {
 }
 
 int main(int argc, char *argv[]) {
-
   rclcpp::init(argc, argv);
-
-  bool test_result = true;
-
-  Tester tester;
-
-  test_result &= tester.test();
-
+  Tester     tester;
+  const bool result = tester.test();
   tester.sleep(2.0);
-
-  std::cout << "Test: reporting test results" << std::endl;
-
-  tester.reportTestResult(test_result);
-
+  tester.reportTestResult(result);
   tester.join();
 }
