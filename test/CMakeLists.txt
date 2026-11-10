@@ -7,6 +7,9 @@ function(add_ros_isolated_launch_test path)
   add_launch_test("${path}" RUNNER "${RUNNER}" ${ARGN})
 endfunction()
 
+# the mock of the MRS nodes automatic start talks to
+include_directories(common)
+
 add_subdirectory(outside_safety_area_should_disarm)
 add_subdirectory(topic_check_failure_should_disarm)
 add_subdirectory(takeoff_should_fail_while_moving)
