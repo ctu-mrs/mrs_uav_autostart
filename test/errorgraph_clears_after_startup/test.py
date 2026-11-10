@@ -6,22 +6,17 @@ import launch
 import launch_ros
 import launch_testing.actions
 import launch_testing.asserts
-from launch.actions import IncludeLaunchDescription, GroupAction
+from launch.actions import IncludeLaunchDescription
 import rclpy
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
-from ament_index_python.packages import get_package_share_directory
 
 from std_msgs.msg import Bool
 
 def generate_test_description():
 
     ld = launch.LaunchDescription()
-
-    uav_type="x500"
-    uav_name="uav1"
-    platform_config=get_package_share_directory("mrs_multirotor_simulator")+"/config/mrs_uav_system/"+uav_type+".yaml"
 
     launch_file_path = os.path.abspath(__file__)
     launch_dir = os.path.dirname(launch_file_path)
@@ -42,71 +37,33 @@ def generate_test_description():
         )
 
     ld.add_action(
-        GroupAction([
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource([
-                    PathJoinSubstitution([
-                        FindPackageShare('mrs_uav_testing'),
-                        'launch',
-                        'mrs_uav_system.launch.py'
-                        ])
-                    ]),
-                    launch_arguments={
-                        'run_automatic_start': "true",
-                        'uav_name': uav_name,
-                        'platform_config': platform_config,
-                    }.items()
-                )
-            ]
-        )
-    )
-
-    ld.add_action(
-        GroupAction([
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource([
-                    PathJoinSubstitution([
-                        FindPackageShare('mrs_uav_testing'),
-                            'launch',
-                            'mrs_multirotor_simulator.launch.py'
-                        ])
-                    ]),
-                    launch_arguments={
-                        'custom_config': launch_dir+"/config/mrs_simulator.yaml",
-                    }.items()
-                )
-            ]
-        )
-    )
-
-    ld.add_action(
-        GroupAction([
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource([
-                    PathJoinSubstitution([
-                        FindPackageShare('mrs_multirotor_simulator'),
-                            'launch',
-                            'hw_api.launch.py'
-                        ])
-                    ]),
-                )
-            ]
-        )
-    )
-
-    # starts the integration interactor
-    ld.add_action(
-            launch_ros.actions.Node(
-                package='mrs_uav_autostart',
-                namespace='',
-                executable='test_'+test_name,
-                name='test_'+test_name,
-                output="screen",
-                parameters=[
-                        {'test_name': test_name},
-                ],
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([
+                PathJoinSubstitution([
+                    FindPackageShare('mrs_uav_autostart'),
+                    'launch',
+                    'automatic_start.launch.py'
+                    ])
+                ]),
+                launch_arguments={
+                    'uav_name': 'uav1',
+                    'use_sim_time': 'false',
+                }.items()
             )
         )
+
+    # the test node plays DiagnosticsManager, ControlManager, HW API and UavManager
+    ld.add_action(
+        launch_ros.actions.Node(
+            package='mrs_uav_autostart',
+            executable='test_'+test_name,
+            name='test_'+test_name,
+            output='screen',
+            parameters=[
+                {'test_name': test_name},
+            ],
+        )
+    )
 
     # starts the python test part down below
     ld.add_action(
@@ -115,6 +72,8 @@ def generate_test_description():
         )
 
     return ld
+
+# #{ class AutostartTest(unittest.TestCase)
 
 class AutostartTest(unittest.TestCase):
 
@@ -160,5 +119,21 @@ class AutostartTest(unittest.TestCase):
             # check if the result is true
             self.assertTrue(test_result[0].data)
 
+            # automatic start waited for DiagnosticsManager's data
+            proc_output.assertWaitFor("waiting for DiagnosticsManager", timeout=5)
+
         finally:
             self.node.destroy_subscription(sub)
+
+# #} end of
+
+# #{ Post-shutdown tests
+
+# disabled: the containers can crash on shutdown, see https://github.com/ros2/rclcpp/issues/3312
+# @launch_testing.post_shutdown_test()
+# class AutostartTestShutdown(unittest.TestCase):
+#     def test_exit_codes(self, proc_info):
+#         """Check if the processes exited normally."""
+#         launch_testing.asserts.assertExitCodes(proc_info)
+
+# #} end of Post-shutdown tests
