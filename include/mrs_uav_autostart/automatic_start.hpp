@@ -220,7 +220,8 @@ private:
 
   bool hasObsoleteParams(const std::string &custom_config_path);
 
-  bool   _trigger_takeoff_ = false;
+  bool   _trigger_takeoff_          = false;
+  bool   _disarm_on_output_timeout_ = true;
   double _takeoff_countdown_;
   double _manual_resume_timeout_;
   double _arm_to_output_timeout_;

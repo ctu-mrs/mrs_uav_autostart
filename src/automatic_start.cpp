@@ -93,6 +93,7 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   param_loader.loadParam("mrs_uav_autostart/takeoff_countdown", _takeoff_countdown_);
   param_loader.loadParam("mrs_uav_autostart/manual_resume_timeout", _manual_resume_timeout_);
   param_loader.loadParam("mrs_uav_autostart/trigger_takeoff", _trigger_takeoff_);
+  param_loader.loadParam("mrs_uav_autostart/disarm_on_output_timeout", _disarm_on_output_timeout_);
 
   if (hasObsoleteParams(custom_config_path)) {
     error_publisher_->flushAndShutdown();
@@ -598,11 +599,13 @@ mrs_lib::Task<> AutomaticStart::stateWaitingForOutput(const Readings &readings) 
   // not late, e.g. after a long toggle_output call during which the pilot could take off
   const bool not_late = isSet(arming) && (clock_->now() - arming).seconds() <= _arm_to_output_timeout_ + arming_late_limit_;
 
-  const bool disarm_allowed = armed_with_data && timeout_from_arming && not_late;
+  const bool disarm_allowed = _disarm_on_output_timeout_ && armed_with_data && timeout_from_arming && not_late;
 
   if (!disarm_allowed) {
-    RCLCPP_WARN(node_->get_logger(), "could not set control output ON for %.1f s, but %s, not disarming", _arm_to_output_timeout_,
-                started_armed_ ? "the UAV was already armed when automatic start came up" : "the UAV was not armed just now");
+    const char *reason = !_disarm_on_output_timeout_ ? "disarm_on_output_timeout is false"
+                         : started_armed_            ? "the UAV was already armed when automatic start came up"
+                                                     : "the UAV was not armed just now";
+    RCLCPP_WARN(node_->get_logger(), "could not set control output ON for %.1f s, but %s, not disarming", _arm_to_output_timeout_, reason);
     startPause(PAUSE_NEEDS_REARM, true);
     co_return;
   }
