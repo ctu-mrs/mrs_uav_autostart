@@ -57,15 +57,15 @@ enum AutostartState_t
   STATE_WAITING_FOR_OUTPUT,
   STATE_WAITING_FOR_OFFBOARD,
   STATE_COUNTDOWN,
-  STATE_MANUAL_PAUSE,
+  STATE_PAUSE,
   STATE_TAKEOFF,
   STATE_FINISHED
 };
 
-constexpr std::array<const char *, 7> state_names = {"WAITING_FOR_ARM", "WAITING_FOR_OUTPUT", "WAITING_FOR_OFFBOARD", "COUNTDOWN", "MANUAL_PAUSE", "TAKEOFF",
+constexpr std::array<const char *, 7> state_names = {"WAITING_FOR_ARM", "WAITING_FOR_OUTPUT", "WAITING_FOR_OFFBOARD", "COUNTDOWN", "PAUSE", "TAKEOFF",
                                                      "FINISHED"};
 
-// the steps of STATE_MANUAL_PAUSE
+// the steps of STATE_PAUSE
 enum PauseStep_t
 {
   PAUSE_IN_MANUAL,
@@ -167,16 +167,24 @@ private:
   // last confirmed offboard reading, so a transient UNKNOWN/NO_LINK gap can't restart the countdown
   bool last_confirmed_offboard_ = false;
 
+  // when we saw the pilot arm (DISARMED directly followed by an armed reading), unset by any DISARMED, NO_LINK,
+  // UNKNOWN or MANUAL reading; the arm-to-output timeout disarms only right after it, see stateWaitingForOutput()
+  rclcpp::Time arming_seen_time_;
+
+  // [s], how much later than _arm_to_output_timeout_ after the arming the timeout may still disarm
+  static constexpr double arming_late_limit_ = 1.0;
+
   bool we_turned_output_on_ = false;
 
   // when toggle_output last accepted our ON, unset after a refusal; see _output_on_confirm_timeout_
   rclcpp::Time output_on_time_;
 
-  // | ------------------ MANUAL pause (timer-owned) ----------------- |
+  // | --------------------- pause (timer-owned) -------------------- |
 
   PauseStep_t  pause_step_                    = PAUSE_IN_MANUAL;
   bool         we_turned_output_off_in_pause_ = false; // we turned the output OFF during this pause (ControlInfo may still lag)
   rclcpp::Time manual_since_;
+  bool         paused_after_output_failure_ = false; // entered NEEDS_REARM because control output could not be turned ON
   rclcpp::Time armed_stable_since_;
 
   rclcpp::Time takeoff_time_;
@@ -193,7 +201,7 @@ private:
   void                stateWaitingForArm(const Readings &readings);
   mrs_lib::Task<>     stateWaitingForOutput(const Readings &readings);
   mrs_lib::Task<>     stateCountdown(const Readings &readings);
-  mrs_lib::Task<bool> stateManualPause(const Readings &readings);
+  mrs_lib::Task<bool> statePause(const Readings &readings);
   void                stateTakeoff(const Readings &readings);
 
   // | ---------------------- service calls --------------------- |
@@ -227,6 +235,7 @@ private:
   rclcpp::Time     state_since_; // when current_state_ was entered
   void             changeState(AutostartState_t new_state);
   void             changePauseStep(PauseStep_t new_step);
+  void             startPause(PauseStep_t step, bool after_output_failure);
 
   static AutostartState_t waitingState(const Readings &readings);
 

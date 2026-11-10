@@ -48,7 +48,6 @@ def generate_test_description():
                 launch_arguments={
                     'uav_name': 'uav1',
                     'use_sim_time': 'false',
-                    'custom_config': launch_dir+"/config/custom_config.yaml",
                 }.items()
             )
         )
@@ -120,9 +119,9 @@ class AutostartTest(unittest.TestCase):
             # check if the result is true
             self.assertTrue(test_result[0].data)
 
-            # automatic start paused on the gap, then disarmed after the restarted timeout
-            proc_output.assertWaitFor("waiting for DiagnosticsManager: general_robot_info", timeout=5)
-            proc_output.assertWaitFor("AUTOMATIC START FINISHED: control output could not be turned ON, disarmed", timeout=5)
+            # automatic start did not disarm, the pilot must disarm and arm again
+            proc_output.assertWaitFor("not disarming", timeout=5)
+            proc_output.assertWaitFor("control output could not be turned ON, disarm and arm again to use automatic start", timeout=5)
 
         finally:
             self.node.destroy_subscription(sub)

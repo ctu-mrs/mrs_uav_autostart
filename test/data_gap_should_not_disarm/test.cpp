@@ -31,14 +31,11 @@ bool Tester::test(void) {
     return mrs.fail("automatic_start disarmed during the general_robot_info gap");
   }
 
-  mrs.publish_general_robot_info = true; // DiagnosticsManager is back, 5 s since the arming: past arm_to_output_timeout
+  mrs.publish_general_robot_info = true; // DiagnosticsManager is back 5 s after the arming, the UAV may have flown off
 
-  if (mrs.waitFor([&] { return mrs.disarm_calls > 0; }, 2.5)) {
-    return mrs.fail("automatic_start disarmed right after general_robot_info was back, the arm-to-output timeout did not restart");
-  }
-
-  if (!mrs.waitFor([&] { return mrs.disarm_calls > 0; }, 4.0)) {
-    return mrs.fail("automatic_start did not disarm after arm_to_output_timeout since general_robot_info was back");
+  // the timeout restarts and fires 4 s later, long after the arming
+  if (mrs.waitFor([&] { return mrs.disarm_calls > 0; }, 7.0)) {
+    return mrs.fail("automatic_start disarmed after the general_robot_info gap, long after the arming");
   }
 
   return mrs.output_on_calls == 0 && mrs.takeoff_calls == 0 ? true : mrs.fail("unexpected output ON or takeoff");

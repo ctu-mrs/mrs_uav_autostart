@@ -26,18 +26,19 @@ bool Tester::test(void) {
     return mrs.fail("automatic_start never enabled output after arming -- mock setup broken");
   }
 
-  sleep(3.0); // long after the arming: a timeout counted from the arming would fire right away
-
-  // the output drops OFF and every ON is refused from now on, the disarm as well
-  mrs.refuse         = true;
-  mrs.output_enabled = false;
-
-  if (mrs.waitFor([&] { return mrs.disarm_calls > 0; }, 1.0)) {
-    return mrs.fail("automatic_start disarmed right after the output dropped OFF, not after arm_to_output_timeout");
+  mrs.state = mrs_msgs::msg::State::STATE_MANUAL; // a short manual flight
+  if (!mrs.waitFor([&] { return !mrs.output_enabled; }, 2.0)) {
+    return mrs.fail("automatic_start did not turn its output off on MANUAL");
   }
+  sleep(1.0); // shorter than manual_resume_timeout
 
-  if (!mrs.waitFor([&] { return mrs.disarm_calls > 0; }, 3.0)) { // arm_to_output_timeout is 1.5 s
-    return mrs.fail("automatic_start did not try to disarm after arm_to_output_timeout");
+  // back on the ground, or still flying with the link lost in between and airborne unknown: both read ARMED
+  mrs.refuse_output_on = true;
+  mrs.state            = mrs_msgs::msg::State::STATE_ARMED;
+
+  // resumes after manual_resume_delay (1 s), then well past arm_to_output_timeout (1.5 s)
+  if (mrs.waitFor([&] { return mrs.disarm_calls > 0; }, 5.0)) {
+    return mrs.fail("automatic_start disarmed after resuming from MANUAL");
   }
 
   return mrs.takeoff_calls == 0 ? true : mrs.fail("unexpected takeoff");

@@ -117,6 +117,41 @@ bool Tester::test(void) {
     sleep(0.1);
   }
 
+  // | --- the way out: the pilot disarms and arms again, an arming automatic start sees -- |
+
+  {
+    auto [success, message] = uh_->arming(false);
+
+    if (!success) {
+      RCLCPP_ERROR(node_->get_logger(), "disarming failed with message: '%s'", message.c_str());
+      return false;
+    }
+  }
+
+  sleep(1.0);
+
+  {
+    auto [success, message] = uh_->arming(true);
+
+    if (!success) {
+      RCLCPP_ERROR(node_->get_logger(), "arming failed with message: '%s'", message.c_str());
+      return false;
+    }
+  }
+
+  // preflight still fails: right after this arming, automatic start disarms through the real HW API
+  const rclcpp::Time disarm_wait_start = clock_->now();
+
+  while (uh_->isArmed()) {
+
+    if (!rclcpp::ok() || (clock_->now() - disarm_wait_start).seconds() > 6.0) {
+      RCLCPP_ERROR(node_->get_logger(), "automatic start did not disarm after the pilot armed again");
+      return false;
+    }
+
+    sleep(0.1);
+  }
+
   return true;
 }
 
