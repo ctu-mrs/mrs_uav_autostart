@@ -29,6 +29,7 @@ inline bool isMrsFlying(const uint8_t state) {
   case State::STATE_GOTO:
   case State::STATE_TRAJECTORY:
   case State::STATE_LAND:
+  case State::STATE_FLIP:
   case State::STATE_RC_MODE:
   case State::STATE_MIDAIR:
   case State::STATE_EHOVER:
@@ -95,6 +96,8 @@ inline const char *stateName(const uint8_t state) {
     return "ELAND";
   case State::STATE_FAILSAFE:
     return "FAILSAFE";
+  case State::STATE_FLIP:
+    return "FLIP";
   case State::STATE_NO_LINK:
     return "NO_LINK";
   default:
