@@ -35,6 +35,7 @@ const std::vector<Expected> all_states = {
   {State::STATE_EHOVER,         true,      true,  true,       true},
   {State::STATE_ELAND,          true,      true,  true,       true},
   {State::STATE_FAILSAFE,       true,      true,  true,       true},
+  {State::STATE_FLIP,           true,      true,  true,       false},
   {State::STATE_NO_LINK,        false,     false, false,      false},
 };
 // clang-format on
