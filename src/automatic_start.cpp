@@ -21,7 +21,7 @@
 #include <mrs_msgs/msg/control_manager_diagnostics.hpp>
 #include <mrs_msgs/msg/safety_area_manager_diagnostics.hpp>
 #include <mrs_msgs/msg/uav_manager_diagnostics.hpp>
-#include <mrs_msgs/msg/gazebo_spawner_diagnostics.hpp>
+#include <mrs_msgs/msg/gazebo_spawner_status.hpp>
 #include <mrs_msgs/msg/hw_api_status.hpp>
 #include <mrs_msgs/msg/hw_api_capabilities.hpp>
 #include <mrs_msgs/msg/estimation_diagnostics.hpp>
@@ -122,7 +122,7 @@ private:
   mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>    sh_control_manager_diag_;
   mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics> sh_safety_area_manager_diag_;
   mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>        sh_uav_manager_diag_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>     sh_gazebo_spawner_diag_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerStatus>          sh_gazebo_spawner_status_;
 
   // | ----------------------- publishers ----------------------- |
 
@@ -142,12 +142,12 @@ private:
 
   void callbackHwApiCapabilities(const mrs_msgs::msg::HwApiCapabilities::ConstSharedPtr msg);
 
-  // | --------------- Gazebo spawner diagnostics --------------- |
+  // | ------------------ Gazebo spawner status ----------------- |
 
-  void                                    callbackGazeboSpawnerDiagnostics(const mrs_msgs::msg::GazeboSpawnerDiagnostics::ConstSharedPtr msg);
-  std::atomic<bool>                       got_gazebo_spawner_diagnostics = false;
-  mrs_msgs::msg::GazeboSpawnerDiagnostics gazebo_spawner_diagnostics_;
-  std::mutex                              mutex_gazebo_spawner_diagnostics_;
+  void                               callbackGazeboSpawnerStatus(const mrs_msgs::msg::GazeboSpawnerStatus::ConstSharedPtr msg);
+  bool                               got_gazebo_spawner_status_ = false;
+  mrs_msgs::msg::GazeboSpawnerStatus gazebo_spawner_status_;
+  std::mutex                         mutex_gazebo_spawner_status_;
 
   // | ----------------- arm and offboard check ----------------- |
 
@@ -167,6 +167,7 @@ private:
   mrs_lib::Task<bool> disarm();
 
   bool isGazeboSimulation(void);
+  bool spawnerReady(void);
   bool hasObsoleteParams(const std::string &custom_config_path);
   bool topicCheck(void);
   bool preflightCheckSpeed(void);
@@ -317,8 +318,13 @@ AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_st
   sh_control_manager_diag_     = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>(shopts, "~/control_manager_diagnostics_in");
   sh_safety_area_manager_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics>(shopts, "~/safety_area_manager_diagnostics_in");
   sh_uav_manager_diag_         = mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>(shopts, "~/uav_manager_diagnostics_in");
-  sh_gazebo_spawner_diag_      = mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>(shopts, "~/gazebo_spawner_diagnostics_in",
-                                                                                                     &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
+
+  // the spawner status is latched, published on change only
+  mrs_lib::SubscriberHandlerOptions shopts_latched = shopts;
+  shopts_latched.qos                               = rclcpp::QoS(1).reliable().transient_local();
+
+  sh_gazebo_spawner_status_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerStatus>(shopts_latched, "~/gazebo_spawner_status_in",
+                                                                                             &AutomaticStart::callbackGazeboSpawnerStatus, this);
 
   // | ----------------------- publishers ----------------------- |
 
@@ -463,22 +469,22 @@ void AutomaticStart::callbackHwApiCapabilities([[maybe_unused]] const mrs_msgs::
 
 //}
 
-/* callbackGazeboSpawnerDiagnostics() //{ */
+/* callbackGazeboSpawnerStatus() //{ */
 
-void AutomaticStart::callbackGazeboSpawnerDiagnostics(const mrs_msgs::msg::GazeboSpawnerDiagnostics::ConstSharedPtr msg) {
+void AutomaticStart::callbackGazeboSpawnerStatus(const mrs_msgs::msg::GazeboSpawnerStatus::ConstSharedPtr msg) {
 
   if (!is_initialized_) {
     return;
   }
 
-  RCLCPP_INFO_ONCE(node_->get_logger(), "getting spawner diagnostics");
+  RCLCPP_INFO_ONCE(node_->get_logger(), "getting spawner status");
 
   {
-    std::scoped_lock lock(mutex_gazebo_spawner_diagnostics_);
+    std::scoped_lock lock(mutex_gazebo_spawner_status_);
 
-    gazebo_spawner_diagnostics_ = *msg;
+    gazebo_spawner_status_ = *msg;
 
-    got_gazebo_spawner_diagnostics = true;
+    got_gazebo_spawner_status_ = true;
   }
 }
 
@@ -608,22 +614,8 @@ mrs_lib::Task<> AutomaticStart::timerMain() {
       }
     }
 
-    if (_simulation_ && isGazeboSimulation()) {
-
-      std::scoped_lock lock(mutex_gazebo_spawner_diagnostics_);
-
-      if (got_gazebo_spawner_diagnostics) {
-
-        if (!gazebo_spawner_diagnostics_.spawn_called || gazebo_spawner_diagnostics_.processing) {
-          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) waiting for spawner to finish spawning UAVs");
-          co_return;
-        }
-
-      } else {
-
-        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) missing spawner diagnostics");
-        co_return;
-      }
+    if (_simulation_ && isGazeboSimulation() && !spawnerReady()) {
+      co_return;
     }
 
     // when armed and in offboard, takeoff
@@ -907,6 +899,49 @@ bool AutomaticStart::isGazeboSimulation(void) {
   }
 
   return false;
+}
+
+//}
+
+/* spawnerReady() //{ */
+
+// take off only when the own vehicle is spawned and the spawner is not busy spawning others (CPU load)
+bool AutomaticStart::spawnerReady(void) {
+
+  std::scoped_lock lock(mutex_gazebo_spawner_status_);
+
+  if (!got_gazebo_spawner_status_) {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) missing spawner status");
+    return false;
+  }
+
+  bool own_spawned = false;
+
+  for (const auto &vehicle : gazebo_spawner_status_.vehicles) {
+
+    if (vehicle.state == mrs_msgs::msg::GazeboSpawnerVehicle::STATE_QUEUED || vehicle.state == mrs_msgs::msg::GazeboSpawnerVehicle::STATE_SPAWNING) {
+      RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) waiting for spawner to finish spawning UAVs");
+      return false;
+    }
+
+    if (vehicle.name != _uav_name_) {
+      continue;
+    }
+
+    if (vehicle.state == mrs_msgs::msg::GazeboSpawnerVehicle::STATE_FAILED) {
+      RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) spawning the UAV failed: %s", vehicle.message.c_str());
+      return false;
+    }
+
+    own_spawned = vehicle.state == mrs_msgs::msg::GazeboSpawnerVehicle::STATE_SPAWNED;
+  }
+
+  if (!own_spawned) {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) waiting for spawner to spawn the UAV");
+    return false;
+  }
+
+  return true;
 }
 
 //}
