@@ -32,8 +32,9 @@ was moved onto DiagnosticsManager):
 - **Control output ON is requested once**: after toggle_output accepts it, automatic start waits
   `output_on_confirm_timeout` (1 s) for ControlInfo to show it before asking again. Before, it
   asked on every tick until ControlInfo caught up, and ControlManager logged "already ON".
-- **Explicit states**: the old `IDLE` is split into the states below, and every state change is
-  logged at INFO, together with `>>>`/`<<<` lines around each service call.
+- **Explicit states**: the old `IDLE` is split into the states below. The log shows each event
+  (e.g. `ARMED`, `DISARMED`, the takeoff countdown) once and each wait once, when it starts or
+  changes; the state changes are logged at DEBUG.
 - **Takeoff monitoring**: after calling `uav_manager/takeoff`, automatic start finishes when the
   takeoff is interrupted (`DISARMED`, `ARMED`, `MANUAL`, `LAND`, `EHOVER`, `ELAND`, `FAILSAFE`) or
   the UAV is not flying normally within `takeoff_timeout` (60 s). Before, it waited for the takeoff
@@ -146,7 +147,8 @@ Every tick of `timerMain()` runs, in this order:
 8. The handler of the state (`stateWaitingForArm()`, `stateWaitingForOutput()`,
    `stateCountdown()`).
 
-Each state change is logged (`switching states A -> B`, `PAUSE: A -> B`).
+Each state change is logged at the DEBUG level (`switching states A -> B`, `PAUSE: A -> B`); the INFO/WARN log shows
+each event once and each wait once, when it starts or changes.
 
 Notes:
 

@@ -119,9 +119,11 @@ class AutostartTest(unittest.TestCase):
             # check if the result is true
             self.assertTrue(test_result[0].data)
 
-            # automatic start finished while still waiting for the output
-            proc_output.assertWaitFor("switching states WAITING_FOR_ARM -> WAITING_FOR_OUTPUT", timeout=5)
+            # automatic start finished while still waiting for the output, without claiming to turn it ON
+            proc_output.assertWaitFor("the UAV is armed and possibly in the air, finishing to prevent an unwanted takeoff", timeout=5)
             proc_output.assertWaitFor("AUTOMATIC START FINISHED: possibly in the air while armed", timeout=5)
+            turning_on = sum(output.text.decode().count("turning control output ON") for output in proc_output)
+            self.assertEqual(turning_on, 0)
 
         finally:
             self.node.destroy_subscription(sub)

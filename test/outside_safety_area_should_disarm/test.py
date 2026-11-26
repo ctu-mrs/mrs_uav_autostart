@@ -120,7 +120,7 @@ class AutostartTest(unittest.TestCase):
             self.assertTrue(test_result[0].data)
 
             # automatic start refused to turn output ON, then disarmed after the timeout
-            proc_output.assertWaitFor("position_valid=FALSE", timeout=5)
+            proc_output.assertWaitFor("position outside the safety area", timeout=5)
             proc_output.assertWaitFor("AUTOMATIC START FINISHED: control output could not be turned ON, disarmed", timeout=5)
 
         finally:

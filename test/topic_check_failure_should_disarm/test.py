@@ -120,7 +120,7 @@ class AutostartTest(unittest.TestCase):
             self.assertTrue(test_result[0].data)
 
             # automatic start refused to turn output ON, then disarmed after the timeout
-            proc_output.assertWaitFor("topics_ok=FALSE", timeout=5)
+            proc_output.assertWaitFor("preflight check failed: topic check (DiagnosticsManager)", timeout=5)
             proc_output.assertWaitFor("AUTOMATIC START FINISHED: control output could not be turned ON, disarmed", timeout=5)
 
         finally:

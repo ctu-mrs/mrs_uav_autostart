@@ -120,12 +120,12 @@ class AutostartTest(unittest.TestCase):
             self.assertTrue(test_result[0].data)
 
             # each disarm (from Pausing, Settling and Unconfirmed) ended the pause
-            proc_output.assertWaitFor("disarmed after MANUAL, starting over", timeout=5)
-            starting_over = sum(output.text.decode().count("disarmed after MANUAL, starting over") for output in proc_output)
+            proc_output.assertWaitFor("DISARMED after MANUAL, starting over", timeout=5)
+            starting_over = sum(output.text.decode().count("DISARMED after MANUAL, starting over") for output in proc_output)
             self.assertEqual(starting_over, 3)
 
             # automatic start actually ran and recognized the situation
-            proc_output.assertWaitFor("switching states COUNTDOWN -> TAKEOFF", timeout=5)
+            proc_output.assertWaitFor("takeoff accepted, taking off", timeout=5)
 
         finally:
             self.node.destroy_subscription(sub)

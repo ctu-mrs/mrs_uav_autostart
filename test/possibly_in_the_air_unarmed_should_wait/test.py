@@ -120,7 +120,7 @@ class AutostartTest(unittest.TestCase):
             self.assertTrue(test_result[0].data)
 
             # automatic start warned while not armed, and finished only once armed
-            proc_output.assertWaitFor("preflight check failed, the UAV is possibly in the air", timeout=5)
+            proc_output.assertWaitFor("preflight check failed: speed, height, gyro, waiting for the UAV to be still on the ground", timeout=5)
             proc_output.assertWaitFor("AUTOMATIC START FINISHED: possibly in the air while armed", timeout=5)
 
         finally:

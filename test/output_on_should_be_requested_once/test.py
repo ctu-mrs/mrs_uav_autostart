@@ -120,7 +120,7 @@ class AutostartTest(unittest.TestCase):
             self.assertTrue(test_result[0].data)
 
             # the output went ON through the normal path
-            proc_output.assertWaitFor("switching states WAITING_FOR_OUTPUT -> WAITING_FOR_OFFBOARD", timeout=5)
+            proc_output.assertWaitFor("control output ON, waiting for OFFBOARD", timeout=5)
 
         finally:
             self.node.destroy_subscription(sub)

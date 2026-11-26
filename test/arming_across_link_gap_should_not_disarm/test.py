@@ -120,7 +120,7 @@ class AutostartTest(unittest.TestCase):
             self.assertTrue(test_result[0].data)
 
             # automatic start did not disarm, the pilot must disarm and arm again
-            proc_output.assertWaitFor("could not set control output ON for 1.5 s, but the UAV was not armed just now, not disarming", timeout=5)
+            proc_output.assertWaitFor("control output not ON within 1.5 s, not disarming (the UAV was not armed just now)", timeout=5)
             proc_output.assertWaitFor("control output could not be turned ON, disarm and arm again to use automatic start", timeout=5)
 
         finally:

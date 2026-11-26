@@ -169,7 +169,7 @@ class AutostartTest(unittest.TestCase):
             self.assertTrue(test_result[0].data)
 
             # automatic start triggered the takeoff, got it rejected and finished
-            proc_output.assertWaitFor("<<< takeoff refused", timeout=5)
+            proc_output.assertWaitFor("takeoff refused", timeout=5)
             proc_output.assertWaitFor("AUTOMATIC START FINISHED", timeout=5)
 
         finally:

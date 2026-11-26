@@ -121,7 +121,7 @@ class AutostartTest(unittest.TestCase):
 
             # automatic start waited for the safety area check (the throttled warning may list more), then turned output ON
             proc_output.assertWaitFor("safety area check", timeout=5)
-            proc_output.assertWaitFor("switching states WAITING_FOR_OUTPUT -> WAITING_FOR_OFFBOARD", timeout=5)
+            proc_output.assertWaitFor("control output ON, waiting for OFFBOARD", timeout=5)
 
         finally:
             self.node.destroy_subscription(sub)

@@ -122,7 +122,7 @@ class AutostartTest(unittest.TestCase):
             # automatic start did not disarm, the pilot must disarm and arm again
             proc_output.assertWaitFor("not disarming", timeout=5)
             proc_output.assertWaitFor("control output could not be turned ON, disarm and arm again to use automatic start", timeout=5)
-            proc_output.assertWaitFor("disarmed, starting over", timeout=5)
+            proc_output.assertWaitFor("DISARMED, starting over", timeout=5)
 
         finally:
             self.node.destroy_subscription(sub)

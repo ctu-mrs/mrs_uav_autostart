@@ -123,7 +123,7 @@ class AutostartTest(unittest.TestCase):
             self.assertFalse(proc_output.waitFor("pausing", timeout=1))
 
             # automatic start actually ran and recognized the situation
-            proc_output.assertWaitFor("switching states COUNTDOWN -> TAKEOFF", timeout=5)
+            proc_output.assertWaitFor("takeoff accepted, taking off", timeout=5)
 
         finally:
             self.node.destroy_subscription(sub)

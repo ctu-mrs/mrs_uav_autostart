@@ -212,9 +212,9 @@ private:
 
   // | ----------------------- simulation ----------------------- |
 
-  bool isGazeboSimulation(void);
-  bool spawnerReady(void);
-  bool is_gazebo_simulation_ = false;
+  bool        isGazeboSimulation(void);
+  std::string spawnerWaitingFor(void);
+  bool        is_gazebo_simulation_ = false;
 
   // | ------------------------- params ------------------------- |
 
@@ -241,6 +241,18 @@ private:
   static AutostartState_t waitingState(const Readings &readings);
 
   void finish(const std::string &reason);
+
+  // | ------------------------ logging ------------------------- |
+
+  // the last status message: a status that holds (e.g. a waiting) is printed once, not on every tick
+  std::string  last_status_;
+  rclcpp::Time last_status_time_;     // when last_status_ was printed, time_zero_ after an event
+  int          countdown_shown_ = -1; // the last countdown second printed, -1 on entering COUNTDOWN
+  void         logStatus(const std::string &text);
+  void         logEvent(const std::string &text, bool warning = false);
+
+  static std::string failedPreflightChecks(const mrs_msgs::msg::PreflightStatus &preflight);
+  static std::string failedInTheAirChecks(const mrs_msgs::msg::PreflightStatus &preflight);
 };
 
 //}
