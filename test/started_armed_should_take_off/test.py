@@ -130,9 +130,12 @@ def generate_test_description():
         )
 
     started = []
+    stdout = []
 
     def start_automatic_start(event):
-        if started or b"START_AUTOMATIC_START" not in event.text:
+        # stdout comes in chunks, the marker may be split between two of them
+        stdout.append(event.text)
+        if started or b"START_AUTOMATIC_START" not in b"".join(stdout):
             return None
         started.append(True)
         return [automatic_start]

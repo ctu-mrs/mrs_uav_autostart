@@ -122,7 +122,12 @@ class AutostartTest(unittest.TestCase):
             # automatic start finished while still waiting for the output, without claiming to turn it ON
             proc_output.assertWaitFor("the UAV is armed and possibly in the air, finishing to prevent an unwanted takeoff", timeout=5)
             proc_output.assertWaitFor("AUTOMATIC START FINISHED: possibly in the air while armed", timeout=5)
-            turning_on = sum(output.text.decode().count("turning control output ON") for output in proc_output)
+            # the output comes in chunks, a line may be split between two of them
+            output_text = {}
+            for output in proc_output:
+                key = (output.process_name, output.from_stdout)
+                output_text[key] = output_text.get(key, b"") + output.text
+            turning_on = sum(text.decode().count("turning control output ON") for text in output_text.values())
             self.assertEqual(turning_on, 0)
 
         finally:

@@ -121,7 +121,12 @@ class AutostartTest(unittest.TestCase):
 
             # each disarm (from Pausing, Settling and Unconfirmed) ended the pause
             proc_output.assertWaitFor("DISARMED after MANUAL, starting over", timeout=5)
-            starting_over = sum(output.text.decode().count("DISARMED after MANUAL, starting over") for output in proc_output)
+            # the output comes in chunks, a line may be split between two of them
+            output_text = {}
+            for output in proc_output:
+                key = (output.process_name, output.from_stdout)
+                output_text[key] = output_text.get(key, b"") + output.text
+            starting_over = sum(text.decode().count("DISARMED after MANUAL, starting over") for text in output_text.values())
             self.assertEqual(starting_over, 3)
 
             # automatic start actually ran and recognized the situation
