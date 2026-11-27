@@ -152,9 +152,9 @@ each event once and each wait once, when it starts or changes.
 
 Notes:
 
-1. **Already flying**: `uav_state` is `TAKEOFF`, `HOVER`, `GOTO`, `TRAJECTORY`, `LAND`, `RC_MODE`,
-   `MIDAIR`, `EHOVER`, `ELAND` or `FAILSAFE` — someone else started the flight (e.g. the node was
-   restarted mid-air, or MRS is taking over a UAV already in the air). Automatic start finishes
+1. **Already flying**: `uav_state` is `TAKEOFF`, `HOVER`, `GOTO`, `TRAJECTORY`, `LAND`, `FLIP`,
+   `RC_MODE`, `MIDAIR`, `EHOVER`, `ELAND` or `FAILSAFE` — someone else started the flight (e.g. the
+   node was restarted mid-air, or MRS is taking over a UAV already in the air). Automatic start finishes
    without touching output, arming or takeoff, from any waiting state or `PAUSE`. `MANUAL`
    does not count as already flying, see `PAUSE` below.
 2. **Possibly in the air**: not OFFBOARD, a preflight speed / height / gyro check failed, and the
