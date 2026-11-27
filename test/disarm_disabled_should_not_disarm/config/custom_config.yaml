@@ -1,0 +1,3 @@
+mrs_uav_autostart:
+
+  disarm_on_output_timeout: false

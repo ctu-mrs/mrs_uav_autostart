@@ -1,0 +1,7 @@
+mrs_uav_autostart:
+
+  # longer than diagnostics_manager_timeout, so the timeout is still running when the gap is detected
+  arm_to_output_timeout: 4.0 # [s]
+
+  # short, so the gap is detected 1 s after general_robot_info stops
+  diagnostics_manager_timeout: 1.0 # [s]

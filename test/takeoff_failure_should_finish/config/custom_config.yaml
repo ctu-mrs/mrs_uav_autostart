@@ -1,0 +1,9 @@
+mrs_uav_managers:
+
+  uav_manager:
+
+    takeoff:
+
+      during_takeoff:
+        # a nonexistent tracker: UavManager rejects the takeoff that automatic start triggers
+        tracker: "WrongTracker"
